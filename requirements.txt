@@ -1,0 +1,17 @@
+geopandas==0.14.1
+matplotlib==3.8.2
+xarray==2023.11.0
+ugrid==0.13.0
+xugrid==0.7.1
+dask==2024.4.2
+hydrolib-core==0.6.1
+dfm_tools
+pandera==0.18.0
+tomli==2.0.1
+tomli_w==1.0.0
+networkx==3.2.1
+black==23.11.0
+openpyxl
+ipykernel
+pandas-xlsx-tables==1.0.0
+pyarrow==14.0.1
