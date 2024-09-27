@@ -1,33 +1,29 @@
-import os
-import sys
-import pandas as pd
-import geopandas as gpd
 from pathlib import Path
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(script_dir))
+import matplotlib.pyplot as plt
+import momepy
+import networkx as nx
 
 from src.network_lumping import NetworkLumping
-from src.network_lumping.preprocessing.preprocessing import preprocess_hydamo_hydroobjects
 
-basis_gpkg = "p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\0_Basisdata.gpkg"
+basis_gpkg = "p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\test\\0_basisdata.gpkg"
 
-# hydro_objects = gpd.read_file(basis_gpkg, layer="Hydro_objecten")
-# afwaterende_eenheden = gpd.read_file(basis_gpkg, layer="Afwateringseenheden")
-
-# network = NetworkLumping(
-#     name='Aa en Maas',
-#     network_edges=hydro_objects,
-#     areas=afwaterende_eenheden
-# )
-
-network = NetworkLumping()
-network.read_basis_data_from_gpkg(
+n = NetworkLumping(name="Aa en Maas")
+n.read_basis_data_from_gpkg(
     basis_gpkg=Path(basis_gpkg),
-    network_edges_layer="Hydro_objecten",
-    areas_layer="Afwateringseenheden"
+    edges_layer="hydroobjecten",
+    edges_id_column="CODE",
+    areas_layer="afwateringseenheden",
+    areas_id_column="Id",
 )
 
 # network.preprocess_basis_data()
+positions = {n: [n[0], n[1]] for n in list(n.G.nodes)}
 
-print(network)
+f, ax = plt.subplots(1, 1, figsize=(10, 6))
+nx.draw(n.G, positions, ax=ax, node_size=8)
+ax.axis("equal")
+plt.tight_layout()
+plt.show()
+
+print(momepy.nx_to_gdf(n.G))
