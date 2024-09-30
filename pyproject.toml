@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "network_lumping"
+dynamic = ["version"]
+description = "Python package to lump (river) networks."
+license = { file = "LICENSE" }
+readme = "README.md"
+authors = [
+    { name = "Harm Nomden" },
+]
+maintainers = [
+    { name = "Harm Nomden", email = "harm.nomden@sweco.nl" },
+    { name = "Joren van Os", email = "joren.vanos@sweco.nl" },
+]
+requires-python = ">= 3.9"
+dependencies = [
+    "black==23.11.0",
+    "dask==2024.4.2",
+    "geopandas==1.0.1",
+    "ipykernel",
+    "matplotlib==3.8.2",
+    "momepy",
+    "networkx==3.2.1",
+    "openpyxl",
+    "pandas-xlsx-tables==1.0.0",
+    "pydantic",
+    "ugrid==0.13.0",
+    "xarray==2023.11.0",
+    "xugrid==0.7.1",
+    "tomli==2.0.1",
+    "tomli_w==1.0.0",
+]
+keywords = ["hydrology", "network_lumping"]
+classifiers = [
+    'License :: OSI Approved :: MIT License',
+    'Programming Language :: Python :: 3.10',
+    'Topic :: Scientific/Engineering :: Hydrology',
+]
+
+[project.urls]
+homepage = "https://github.com/Sweco-NL/network_lumping_tool"
+repository = "https://github.com/Sweco-NL/network_lumping_tool"
+
+[tool.setuptools.dynamic]
+version = { attr = "src.network_lumping.version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 88
+extend-include = ["*.ipynb"]
+
+[tool.ruff.lint]
+# See: https://docs.astral.sh/ruff/rules/
+select = [
+    "C4",  # flake8-comprehensions
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "PT",  # pytest-style
+    "D",   # pydocstyle
+    "B",   # flake8-bugbear
+    "NPY", # numpy
+]
+ignore = [
+    "D401", # Imperative mood for docstring. Be glad we have docstrings at all :P!
+    "D100", # Missing docstring in module.
+    "D104", # Missing docstring in public package.
+]
+
+[tool.ruff.format]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --durations=0 --cov-report xml:coverage.xml --cov nlmod -v"
+markers = ["notebooks: run notebooks", "slow: slow tests", "skip: skip tests"]

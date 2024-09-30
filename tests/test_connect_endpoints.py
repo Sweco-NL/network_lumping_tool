@@ -2,66 +2,49 @@ import geopandas as gpd
 import pandas as pd
 import networkx as nx
 from shapely.geometry import Polygon, Point, LineString
-from shapely.ops import snap, split
-import itertools
-import datetime
 import os
-import numpy as np
-import time
-import logging
-import warnings
 import sys
 from pathlib import Path
-import fiona
+import logging
+import matplotlib.pyplot as plt
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(script_dir))
 
-import src.network_lumping.preprocessing.general 
+from src.network_lumping.preprocessing.general import remove_z_dims, connect_endpoints_by_buffer
+from src.network_lumping.graph_utils.create_graph import (
+    generate_nodes_from_edges,
+    create_graph_based_on_nodes_edges,
+    create_graph_from_edges,
+)
 
-basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\aa_en_maas\\0_basisdata.gpkg'
+logging.basicConfig(level=logging.INFO)
+
+# basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\aa_en_maas\\0_basisdata.gpkg'
+basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\test\\0_basisdata.gpkg'
 print(basis_gpkg)
-hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten").to_crs(28992)
+hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten2").to_crs(28992)
 hydro_objects.rename(columns={'CODE':'code'}, inplace=True)
 
 # Function to convert LineString Z to 2D
-def convert_line_string_z_to_2d(geometry):
-    if geometry.has_z:  # Check if geometry has Z coordinates
-        return LineString(list(geometry.coords))  # Convert to 2D LineString
-    return geometry
-
-# Apply the function only to valid geometries
-hydro_objects['geometry'] = hydro_objects['geometry'].apply(
-    lambda geom: convert_line_string_z_to_2d(geom) if isinstance(geom, LineString) else geom
-)
+hydro_objects = remove_z_dims(hydro_objects)
 
 # Assuming `lines_gdf` is your original GeoDataFrame containing LineString Z geometries
-problematic_lines = []
-
-for index, row in hydro_objects.iterrows():
-    try:
-        geom = row['geometry']
-        # Attempt to access coordinates to check for Z
-        if geom.has_z:  # Check if the geometry has Z coordinates
-            raise ValueError(f"Line has Z coordinates: {geom}")
-        
-        # Your processing logic here (if applicable)
-
-    except Exception as e:
-        # Collect problematic line info
-        problematic_lines.append({
-            'code': row['code'],  # Replace 'id' with your actual ID column name
-            'geometry': geom,
-            'error': str(e)
-        })
-
-# Create a GeoDataFrame from problematic lines
-problematic_gdf = gpd.GeoDataFrame(problematic_lines)
-
-# Set the geometry column
-problematic_gdf = gpd.GeoDataFrame(problematic_gdf, geometry='geometry')
-
-print(problematic_gdf)
-
 # Now you can safely call your connect_endpoints_by_buffer function
-result = src.network_lumping.preprocessing.general.connect_endpoints_by_buffer(problematic_gdf)
+hydro_objects = connect_endpoints_by_buffer(hydro_objects)
+
+nodes, edges, graph = create_graph_from_edges(hydro_objects)
+positions = {n: [n[0], n[1]] for n in list(graph.nodes)}
+
+f, ax = plt.subplots(1, 1, figsize=(10, 6))
+hydro_objects.plot(ax=ax, color='lightblue', zorder=0)
+hydro_objects[hydro_objects.preprocessing_split=="Opgeknipt"].plot(ax=ax, color='red', zorder=0)
+nx.draw(graph, positions, ax=ax, node_size=8)
+ax.axis("equal")
+plt.tight_layout()
+
+export_gpkg = basis_gpkg.replace("0_basisdata", "1_data_bewerkt")
+hydro_objects.to_file(export_gpkg, layer="hydroobjecten")
+
+
+print(hydro_objects)
