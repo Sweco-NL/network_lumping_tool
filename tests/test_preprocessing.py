@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(script_dir))
 from src.network_lumping import NetworkLumping
 from src.network_lumping.preprocessing.preprocessing import preprocess_hydamo_hydroobjects
 
-basis_gpkg = "p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\0_Basisdata.gpkg"
+basis_gpkg = "P:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\aa_en_maas\\0_basisdata.gpkg"
 
 # hydro_objects = gpd.read_file(basis_gpkg, layer="Hydro_objecten")
 # afwaterende_eenheden = gpd.read_file(basis_gpkg, layer="Afwateringseenheden")
@@ -24,7 +24,7 @@ basis_gpkg = "p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdo
 network = NetworkLumping()
 network.read_basis_data_from_gpkg(
     basis_gpkg=Path(basis_gpkg),
-    network_edges_layer="Hydro_objecten",
+    network_edges_layer="hydroobjecten",
     areas_layer="Afwateringseenheden"
 )
 
