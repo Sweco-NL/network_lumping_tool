@@ -23,7 +23,7 @@ def remove_z_dims(_gdf: gpd.GeoDataFrame):
     return _gdf
 
 
-def get_endpoints_from_lines(lines: gpd.GeoDataFrame, directed=True) -> gpd.GeoDataFrame:
+def get_endpoints_from_lines(lines: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     Extract all unique endpoints of line features from vector data
 
@@ -89,7 +89,7 @@ def add_point_to_linestring(point: Point, linestring: LineString) -> LineString:
         if modified_linestring1.length < modified_linestring2.length
         else modified_linestring2
     )
-    return (modified_linestring, index_nearest_neighbour)
+    return modified_linestring, index_nearest_neighbour
 
 
 def split_linestring_by_indices(linestring: LineString, split_indices: list) -> list:
@@ -169,8 +169,7 @@ def connect_lines_by_endpoints(
     Returns:
         gpd.GeoDataFrame: line feature dataframe
     """
-
-    listed_lines = list(itertools.chain.from_iterable(split_endpoints["target_lines"]))
+    listed_lines = list(itertools.chain.from_iterable(split_endpoints["unconnected_lines_crossings"]))
     listed_points = list(
         itertools.chain.from_iterable(split_endpoints["points_to_target_lines"])
     )
@@ -189,23 +188,20 @@ def connect_lines_by_endpoints(
     split_lines["preprocessing_split"] = None
 
     for split_action in splits:
-        split_edge = split_action["split_line"]
-        line = lines[lines["code"] == split_edge]
-        linestring = line["geometry"].values[0]
+        line = lines[lines["code"] == split_action["split_line"]].iloc[0]
+        linestring = line['geometry']
         nodes_to_add = []
         for node in split_action["split_points"]:
-            (modified_linestring, index_nearest_neighbour) = add_point_to_linestring(
-                Point(node), linestring
-            )
+            new_linestring, index_new_point = add_point_to_linestring(node, linestring)
 
-            if index_nearest_neighbour == 0 and linestring.coords[0] in list(
+            if index_new_point == 0 and linestring.coords[0] in list(
                 connections_to_create.loc[
                     connections_to_create["inserted"] == True, "point"
                 ].values
             ):
                 continue
 
-            elif index_nearest_neighbour == len(
+            elif index_new_point == len(
                 linestring.coords
             ) - 1 and linestring.coords[-1] in list(
                 connections_to_create.loc[
@@ -214,7 +210,7 @@ def connect_lines_by_endpoints(
             ):
                 continue
 
-            linestring = modified_linestring
+            linestring = new_linestring
 
             connections_to_create["inserted"][
                 connections_to_create["point"] == node
@@ -230,14 +226,14 @@ def connect_lines_by_endpoints(
         for k, split_linestring in enumerate(split_linestrings):
             snip_line = line.copy()
             snip_line["geometry"] = split_linestring
-            snip_line["preprocessing_split"] = "Opgeknipt"
-            snip_line["code"] = f'{snip_line["code"].values[0]}-{k}'
+            snip_line["preprocessing_split"] = "Opgeknipt"  # Only assign to split lines
+            snip_line["code"] = f'{snip_line["code"]}-{k}'
             split_lines = pd.concat([split_lines, snip_line], axis=0, join="inner")
 
-    # Remove lines that have been devided from original geodataframe, and append resulting lines
-    uneditted_lines = lines[~lines["code"].isin(connections_to_create["lines"])]
+    # Remove lines that have been divided from original geodataframe, and append resulting lines
+    unedited_lines = lines[~lines["code"].isin(connections_to_create["lines"])]
     connected_lines = pd.concat(
-        [uneditted_lines, split_lines], axis=0, join="outer"
+        [unedited_lines, split_lines], axis=0, join="outer"
     ).reset_index(drop=True)
 
     # Remove excessive split lines
@@ -277,7 +273,7 @@ def connect_endpoints_by_buffer(
         boundary_endpoints = gpd.GeoDataFrame(
             endpoints[
                 (endpoints["starting_line_count"] == 0)
-                # | (endpoints["ending_line_count"] == 0)
+                | (endpoints["ending_line_count"] == 0)
             ]
         )
         lines["buffer_geometry"] = lines.geometry.buffer(
@@ -290,30 +286,20 @@ def connect_endpoints_by_buffer(
                 boundary_endpoints.geometry,
             )
         )
+
         boundary_endpoints["startpoint_overlaying_line_buffers"] = (
             boundary_endpoints.apply(
-                lambda x: list(
-                    map(
-                        lambda y: x["coordinates"]
-                        in list(lines[lines.code == y].endpoint.values),
-                        x["overlaying_line_buffers"],
-                    )
-                ),
+                lambda x: lines[lines.code.isin(x["overlaying_line_buffers"])].endpoint.values,
                 axis=1,
             )
         )
         boundary_endpoints["endpoint_overlaying_line_buffers"] = (
             boundary_endpoints.apply(
-                lambda x: list(
-                    map(
-                        lambda y: x["coordinates"]
-                        in list(lines[lines.code == y].startpoint.values),
-                        x["overlaying_line_buffers"],
-                    )
-                ),
+                lambda x: lines[lines.code.isin(x["overlaying_line_buffers"])].startpoint.values,
                 axis=1,
             )
         )
+        # connection between open ends
         boundary_endpoints["start_or_endpoint_overlaying_line_buffers"] = (
             boundary_endpoints.apply(
                 lambda x: list(
@@ -325,25 +311,32 @@ def connect_endpoints_by_buffer(
                 axis=1,
             )
         )
-        boundary_endpoints["crossed_by_unconnected_lines"] = boundary_endpoints.apply(
-            lambda x: True
-            in [True not in y for y in x["start_or_endpoint_overlaying_line_buffers"]],
-            axis=1,
-        )
-        unconnected_endpoints = boundary_endpoints[
-            boundary_endpoints["crossed_by_unconnected_lines"] == True
-        ].reset_index(drop=True)
-        unconnected_endpoints["target_lines"] = unconnected_endpoints.apply(
+
+        # check on unconnected endpoints
+        boundary_endpoints["unconnected_lines_crossings"] = boundary_endpoints.apply(
             lambda x: [
-                x["overlaying_line_buffers"][i]
-                for i in range(len(x["overlaying_line_buffers"]))
-                if x["start_or_endpoint_overlaying_line_buffers"][i] == (False, False)
+                b for b in x["overlaying_line_buffers"] 
+                if (b not in x["starting_lines"] and b not in x["ending_lines"])
             ],
-            axis=1,
+            axis=1
         )
-        unconnected_endpoints["points_to_target_lines"] = unconnected_endpoints.apply(
-            lambda x: [x["coordinates"]] * len(x["target_lines"]), axis=1
+        boundary_endpoints["unconnected_lines_crossing"] = boundary_endpoints.apply(
+            lambda x: len(x["unconnected_lines_crossings"])>0,
+            axis=1
         )
+        
+        unconnected_endpoints = boundary_endpoints[
+            boundary_endpoints["unconnected_lines_crossing"] == True
+        ].reset_index(drop=True)
+
+        if unconnected_endpoints.empty:
+            unconnected_endpoints["unconnected_lines_crossing"] = None
+            unconnected_endpoints["points_to_target_lines"] = None
+        else:
+            unconnected_endpoints["points_to_target_lines"] = unconnected_endpoints.apply(
+                lambda x: [x["coordinates"]] * len(x["unconnected_lines_crossings"]), axis=1
+            )
+        
         previous_unconnected_endpoints_count = unconnected_endpoints_count
         unconnected_endpoints_count = len(unconnected_endpoints)
         if iterations == 0:
@@ -361,6 +354,7 @@ def connect_endpoints_by_buffer(
             logging.info("Linestrings connected, starting new iteration...")
         else:
             lines = lines.drop(["startpoint", "endpoint", "buffer_geometry"], axis=1)
+            lines["preprocessing_split"] = None
             finished = True
 
     end_time = time.time()
