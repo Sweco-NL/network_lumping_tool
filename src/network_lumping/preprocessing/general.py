@@ -116,42 +116,40 @@ def split_linestring_by_indices(linestring: LineString, split_indices: list) -> 
     return split_linestrings
 
 
-def remove_duplicate_split_lines(lines: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    Removes duplicates of split lines from line feature vector dataset. Duplicates
-    are removed from a subselection from the line feature dataset that contains
-    all line features that have been split.
+# def remove_duplicate_split_lines(lines: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+#     """
+#     Removes duplicates of split lines from line feature vector dataset. Duplicates
+#     are removed from a subselection from the line feature dataset that contains
+#     all line features that have been split.
 
-    Args:
-        lines (gpd.GeoDataFrame): Vector data containing line features
+#     Args:
+#         lines (gpd.GeoDataFrame): Vector data containing line features
 
-    Returns:
-        gpd.GeoDataFrame: Vector data containing line features without duplicates
-    """
-    lines["distance"] = list(map(lambda x: x.length, lines["geometry"]))
-    updated_endpoints = get_endpoints_from_lines(lines)
-    ending_lines_clean_start = updated_endpoints[
-        (updated_endpoints["starting_lines"].str.len() > 1)
-    ]["starting_lines"]
-    ending_lines_clean_start = list(
-        itertools.chain.from_iterable(ending_lines_clean_start)
-    )
-    ending_lines_clean_end = updated_endpoints[
-        (updated_endpoints["ending_lines"].str.len() > 1)
-    ]["ending_lines"]
-    ending_lines_clean_end = list(itertools.chain.from_iterable(ending_lines_clean_end))
-    lines_to_remove = list(
-        pd.unique(pd.Series(ending_lines_clean_start + ending_lines_clean_end))
-    )
-    lines = lines[
-        ~(
-            (lines["distance"] <= 0.5)
-            & (lines["preprocessing_split"] == "Opgeknipt")
-            & (lines["code"].isin(lines_to_remove))
-        )
-    ].reset_index(drop=True)
+#     Returns:
+#         gpd.GeoDataFrame: Vector data containing line features without duplicates
+#     """
+#     lines["length"] = lines["geometry"].length
+#     updated_endpoints = get_endpoints_from_lines(lines)
+#     ending_lines_clean_start = updated_endpoints[
+#         (updated_endpoints["starting_lines"].str.len() > 1)
+#     ]["starting_lines"]
+#     ending_lines_clean_start = list(itertools.chain.from_iterable(ending_lines_clean_start))
+#     ending_lines_clean_end = updated_endpoints[
+#         (updated_endpoints["ending_lines"].str.len() > 1)
+#     ]["ending_lines"]
+#     ending_lines_clean_end = list(itertools.chain.from_iterable(ending_lines_clean_end))
+#     lines_to_remove = list(
+#         pd.unique(pd.Series(ending_lines_clean_start + ending_lines_clean_end))
+#     )
+#     lines = lines[
+#         ~(
+#             (lines["length"] <= 0.5)
+#             & (lines["preprocessing_split"] == "split")
+#             & (lines["code"].isin(lines_to_remove))
+#         )
+#     ].reset_index(drop=True)
 
-    return lines
+#     return lines
 
 
 def connect_lines_by_endpoints(
@@ -170,9 +168,7 @@ def connect_lines_by_endpoints(
         gpd.GeoDataFrame: line feature dataframe
     """
     listed_lines = list(itertools.chain.from_iterable(split_endpoints["unconnected_lines_crossings"]))
-    listed_points = list(
-        itertools.chain.from_iterable(split_endpoints["points_to_target_lines"])
-    )
+    listed_points = list(itertools.chain.from_iterable(split_endpoints["points_to_target_lines"]))
     connections_to_create = pd.DataFrame(
         {"lines": listed_lines, "point": listed_points}
     )
@@ -186,6 +182,7 @@ def connect_lines_by_endpoints(
     # A dataframe is created to store the resulting linestrings from the splits
     split_lines = gpd.GeoDataFrame(columns=lines.columns)
     split_lines["preprocessing_split"] = None
+    split_lines["new_code"] = split_lines["code"]
 
     for split_action in splits:
         line = lines[lines["code"] == split_action["split_line"]].iloc[0]
@@ -226,18 +223,19 @@ def connect_lines_by_endpoints(
         for k, split_linestring in enumerate(split_linestrings):
             snip_line = line.copy()
             snip_line["geometry"] = split_linestring
-            snip_line["preprocessing_split"] = "Opgeknipt"  # Only assign to split lines
-            snip_line["code"] = f'{snip_line["code"]}-{k}'
-            split_lines = pd.concat([split_lines, snip_line], axis=0, join="inner")
+            snip_line["preprocessing_split"] = "split"
+            snip_line["new_code"] = f'{snip_line["code"]}-{k}'
+            split_lines = pd.concat([split_lines, snip_line.to_frame().T], axis=0, join="inner")
 
     # Remove lines that have been divided from original geodataframe, and append resulting lines
     unedited_lines = lines[~lines["code"].isin(connections_to_create["lines"])]
-    connected_lines = pd.concat(
+    lines = pd.concat(
         [unedited_lines, split_lines], axis=0, join="outer"
     ).reset_index(drop=True)
 
     # Remove excessive split lines
-    lines = remove_duplicate_split_lines(connected_lines)
+    lines.geometry = lines.geometry.simplify(tolerance=0.0)
+    lines = lines.drop_duplicates(subset="geometry", keep="first")
     return lines
 
 
@@ -262,6 +260,7 @@ def connect_endpoints_by_buffer(
     iterations = 0
     unconnected_endpoints_count = 0
     finished = False
+    lines["preprocessing_split"] = None
 
     logging.info(
         f"Detect unconnected endpoints nearby linestrings, buffer distance: {buffer_distance}m"
@@ -354,7 +353,6 @@ def connect_endpoints_by_buffer(
             logging.info("Linestrings connected, starting new iteration...")
         else:
             lines = lines.drop(["startpoint", "endpoint", "buffer_geometry"], axis=1)
-            lines["preprocessing_split"] = None
             finished = True
 
     end_time = time.time()

@@ -38,7 +38,7 @@ positions = {n: [n[0], n[1]] for n in list(graph.nodes)}
 
 f, ax = plt.subplots(1, 1, figsize=(10, 6))
 hydro_objects.plot(ax=ax, color='lightblue', zorder=0)
-hydro_objects[hydro_objects.preprocessing_split=="Opgeknipt"].plot(ax=ax, color='red', zorder=0)
+hydro_objects[hydro_objects.preprocessing_split=="split"].plot(ax=ax, color='red', zorder=1)
 nx.draw(graph, positions, ax=ax, node_size=8)
 ax.axis("equal")
 plt.tight_layout()
@@ -46,5 +46,5 @@ plt.tight_layout()
 export_gpkg = basis_gpkg.replace("0_basisdata", "1_data_bewerkt")
 hydro_objects.to_file(export_gpkg, layer="hydroobjecten")
 
-
 print(hydro_objects)
+
