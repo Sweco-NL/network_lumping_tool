@@ -1,7 +1,8 @@
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import networkx as nx
-from shapely.geometry import Polygon, Point, LineString
+from shapely.geometry import Polygon, Point, LineString, MultiPoint
 from shapely.ops import snap, split
 import itertools
 import time
@@ -167,33 +168,41 @@ def connect_lines_by_endpoints(
     Returns:
         gpd.GeoDataFrame: line feature dataframe
     """
-    listed_lines = list(itertools.chain.from_iterable(split_endpoints["unconnected_lines_crossings"]))
-    listed_points = list(itertools.chain.from_iterable(split_endpoints["points_to_target_lines"]))
-    connections_to_create = pd.DataFrame(
-        {"lines": listed_lines, "point": listed_points}
+    split_endpoints["lines_to_add_point"] = split_endpoints.apply(
+        lambda x: np.append(x["starting_lines"], x["ending_lines"]), 
+        axis=1
     )
+    split_endpoints["points_to_add"] = split_endpoints.apply(
+        lambda x: np.array([Point(p) for p in x["points_to_add"]]), 
+        axis=1
+    )
+    split_endpoints["lines_to_add_point"] = split_endpoints.apply(
+        lambda x: x["unconnected_lines"] if x["points_to_add"].size == 0 else x["lines_to_add_point"], 
+        axis=1
+    )
+    split_endpoints["points_to_add"] = split_endpoints.apply(
+        lambda x: [Point(p) for p in set(x["points_to_add"])] if list(x["lines_to_add_point"]) != list(x["unconnected_lines"]) else [x["coordinates"]], 
+        axis=1
+    )
+    connections_to_create = split_endpoints[["lines_to_add_point", "points_to_add"]]
     connections_to_create["inserted"] = False
-    grouped_split_points_by_line = connections_to_create.groupby("lines")["point"]
-    splits = [
-        {"split_line": line, "split_points": list(points)}
-        for line, points in grouped_split_points_by_line
-    ]
 
     # A dataframe is created to store the resulting linestrings from the splits
     split_lines = gpd.GeoDataFrame(columns=lines.columns)
     split_lines["preprocessing_split"] = None
     split_lines["new_code"] = split_lines["code"]
 
-    for split_action in splits:
-        line = lines[lines["code"] == split_action["split_line"]].iloc[0]
+    for ind, split_action in split_endpoints.iterrows():
+        print(split_action["lines_to_add_point"])
+        line = lines[lines["code"].isin(split_action["lines_to_add_point"])].iloc[0]
         linestring = line['geometry']
         nodes_to_add = []
-        for node in split_action["split_points"]:
+        for node in split_action["points_to_add"]:
             new_linestring, index_new_point = add_point_to_linestring(node, linestring)
 
             if index_new_point == 0 and linestring.coords[0] in list(
                 connections_to_create.loc[
-                    connections_to_create["inserted"] == True, "point"
+                    connections_to_create["inserted"] == True, "points_to_add"
                 ].values
             ):
                 continue
@@ -202,15 +211,23 @@ def connect_lines_by_endpoints(
                 linestring.coords
             ) - 1 and linestring.coords[-1] in list(
                 connections_to_create.loc[
-                    connections_to_create["inserted"] == True, "point"
+                    connections_to_create["inserted"] == True, "points_to_add"
                 ].values
             ):
+                continue
+            
+            new_linestring = new_linestring.simplify(tolerance=0.0)
+            if linestring == new_linestring:
+                connections_to_create = connections_to_create[
+                    
+                    connections_to_create["lines_to_add_point"] == split_action["lines_to_add_point"]
+                ]
                 continue
 
             linestring = new_linestring
 
             connections_to_create["inserted"][
-                connections_to_create["point"] == node
+                connections_to_create["points_to_add"] == node
             ] = True
 
             nodes_to_add += [node]
@@ -228,7 +245,9 @@ def connect_lines_by_endpoints(
             split_lines = pd.concat([split_lines, snip_line.to_frame().T], axis=0, join="inner")
 
     # Remove lines that have been divided from original geodataframe, and append resulting lines
-    unedited_lines = lines[~lines["code"].isin(connections_to_create["lines"])]
+    unedited_lines = lines[~lines["code"].isin([
+        x for c in connections_to_create["lines_to_add_point"].values for x in c
+    ])]
     lines = pd.concat(
         [unedited_lines, split_lines], axis=0, join="outer"
     ).reset_index(drop=True)
@@ -236,6 +255,7 @@ def connect_lines_by_endpoints(
     # Remove excessive split lines
     lines.geometry = lines.geometry.simplify(tolerance=0.0)
     lines = lines.drop_duplicates(subset="geometry", keep="first")
+    lines = lines[lines.geometry.length > 0]
     return lines
 
 
@@ -286,54 +306,48 @@ def connect_endpoints_by_buffer(
             )
         )
 
-        boundary_endpoints["startpoint_overlaying_line_buffers"] = (
-            boundary_endpoints.apply(
-                lambda x: lines[lines.code.isin(x["overlaying_line_buffers"])].endpoint.values,
-                axis=1,
-            )
-        )
-        boundary_endpoints["endpoint_overlaying_line_buffers"] = (
-            boundary_endpoints.apply(
-                lambda x: lines[lines.code.isin(x["overlaying_line_buffers"])].startpoint.values,
-                axis=1,
-            )
-        )
-        # connection between open ends
-        boundary_endpoints["start_or_endpoint_overlaying_line_buffers"] = (
-            boundary_endpoints.apply(
-                lambda x: list(
-                    zip(
-                        x["startpoint_overlaying_line_buffers"],
-                        x["endpoint_overlaying_line_buffers"],
-                    )
-                ),
-                axis=1,
-            )
-        )
-
         # check on unconnected endpoints
-        boundary_endpoints["unconnected_lines_crossings"] = boundary_endpoints.apply(
+        boundary_endpoints["unconnected_lines"] = boundary_endpoints.apply(
             lambda x: [
                 b for b in x["overlaying_line_buffers"] 
                 if (b not in x["starting_lines"] and b not in x["ending_lines"])
             ],
             axis=1
         )
-        boundary_endpoints["unconnected_lines_crossing"] = boundary_endpoints.apply(
-            lambda x: len(x["unconnected_lines_crossings"])>0,
+        boundary_endpoints["startpoint_unconnected_lines"] = (
+            boundary_endpoints.apply(
+                lambda x: lines[lines.code.isin(x["unconnected_lines"])].endpoint.values,
+                axis=1,
+            )
+        )
+        boundary_endpoints["endpoint_unconnected_lines"] = (
+            boundary_endpoints.apply(
+                lambda x: lines[lines.code.isin(x["unconnected_lines"])].startpoint.values,
+                axis=1,
+            )
+        )
+        boundary_endpoints["unconnected_lines_present"] = boundary_endpoints.apply(
+            lambda x: len(x["unconnected_lines"])>0,
             axis=1
         )
         
         unconnected_endpoints = boundary_endpoints[
-            boundary_endpoints["unconnected_lines_crossing"] == True
+            boundary_endpoints["unconnected_lines_present"] == True
         ].reset_index(drop=True)
 
         if unconnected_endpoints.empty:
-            unconnected_endpoints["unconnected_lines_crossing"] = None
-            unconnected_endpoints["points_to_target_lines"] = None
+            unconnected_endpoints["unconnected_lines_present"] = None
+            unconnected_endpoints["points_to_add"] = None
         else:
-            unconnected_endpoints["points_to_target_lines"] = unconnected_endpoints.apply(
-                lambda x: [x["coordinates"]] * len(x["unconnected_lines_crossings"]), axis=1
+            unconnected_endpoints["points_to_add"] = (
+                unconnected_endpoints.apply(
+                    lambda x: np.array([
+                        p for p in 
+                            np.append(x["startpoint_unconnected_lines"], x["endpoint_unconnected_lines"])
+                        if x["coordinates"].buffer(buffer_distance).covers(Point(p))
+                    ]),
+                    axis=1,
+                )
             )
         
         previous_unconnected_endpoints_count = unconnected_endpoints_count
