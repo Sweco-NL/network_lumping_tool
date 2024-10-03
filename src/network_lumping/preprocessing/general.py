@@ -341,16 +341,14 @@ def connect_endpoints_by_buffer(
         if iterations == 0:
             unconnected_endpoints_count_total = unconnected_endpoints_count
         logging.info(
-            f"{unconnected_endpoints_count} unconnected endpoints detected nearby intersecting lines"
+            f"{unconnected_endpoints_count} unconnected endpoints nearby intersecting lines (iteration {iterations})"
         )
         if (
             unconnected_endpoints_count != 0
             and unconnected_endpoints_count != previous_unconnected_endpoints_count
         ):
-            logging.info("Connecting linestrings...")
             lines = connect_lines_by_endpoints(unconnected_endpoints, lines)
             iterations += 1
-            logging.info("Linestrings connected, starting new iteration...")
         else:
             lines = lines.drop(["startpoint", "endpoint", "buffer_geometry"], axis=1)
             finished = True
