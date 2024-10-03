@@ -24,14 +24,14 @@ basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdo
 hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten").to_crs(28992)
 # basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\test\\0_basisdata.gpkg'
 # hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten2").to_crs(28992)
+
 hydro_objects.rename(columns={'CODE':'code'}, inplace=True)
 print(basis_gpkg)
 
-# Function to convert LineString Z to 2D
+# LineString Z to 2D
 hydro_objects = remove_z_dims(hydro_objects)
 
-# Assuming `lines_gdf` is your original GeoDataFrame containing LineString Z geometries
-# Now you can safely call your connect_endpoints_by_buffer function
+# Check and connect endpoints
 hydro_objects = connect_endpoints_by_buffer(hydro_objects)
 
 nodes, edges, graph = create_graph_from_edges(hydro_objects)
