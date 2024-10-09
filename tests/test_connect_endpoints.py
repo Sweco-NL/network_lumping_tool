@@ -20,10 +20,10 @@ from src.network_lumping.graph_utils.create_graph import (
 
 logging.basicConfig(level=logging.INFO)
 
-basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\aa_en_maas\\0_basisdata.gpkg'
-hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten").to_crs(28992)
-# basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\test\\0_basisdata.gpkg'
-# hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten2").to_crs(28992)
+# basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\aa_en_maas\\0_basisdata.gpkg'
+# hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten").to_crs(28992)
+basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\test\\0_basisdata.gpkg'
+hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten2").to_crs(28992)
 
 hydro_objects.rename(columns={'CODE':'code'}, inplace=True)
 print(basis_gpkg)
@@ -43,6 +43,7 @@ hydro_objects[hydro_objects.preprocessing_split=="split"].plot(ax=ax, color='red
 nx.draw(graph, positions, ax=ax, node_size=8)
 ax.axis("equal")
 plt.tight_layout()
+plt.show()
 
 export_gpkg = basis_gpkg.replace("0_basisdata", "1_data_bewerkt")
 hydro_objects.to_file(export_gpkg, layer="hydroobjecten")
