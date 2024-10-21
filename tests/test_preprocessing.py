@@ -4,10 +4,14 @@ import matplotlib.pyplot as plt
 import momepy
 import networkx as nx
 import logging
+from dotenv import dotenv_values
 
 from src.network_lumping import NetworkLumping
 
-basis_gpkg = "p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\test\\0_basisdata.gpkg"
+config = dotenv_values("..\\.env")
+base_dir = Path(config["DATA_DIR"])
+
+basis_gpkg = Path(base_dir, "0_basisdata.gpkg")
 
 n = NetworkLumping(name="Aa en Maas")
 n.read_basis_data_from_gpkg(

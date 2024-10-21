@@ -83,32 +83,40 @@ def find_node_ids_in_directed_graph(from_node_ids, to_node_ids, node_ids, search
     return results
 
 
-def find_nodes_edges_for_direction(nodes, edges, nodes_selection, direction="upstream"):
+def find_nodes_edges_for_direction(
+    nodes: gpd.GeoDataFrame, 
+    edges: gpd.GeoDataFrame, 
+    node_ids: list, 
+    border_node_ids: list = None,
+    direction: str = "upstream"
+):
+    """find_nodes_edges_for_direction"""
+
     nodes_direction = find_node_ids_in_directed_graph(
         from_node_ids=edges.node_start.to_numpy(), 
         to_node_ids=edges.node_end.to_numpy(), 
-        node_ids=nodes_selection, 
+        node_ids=node_ids, 
         search_node_ids=nodes.nodeID.to_numpy(), 
-        border_node_ids=None, 
+        border_node_ids=border_node_ids, 
         direction=direction
     )
 
-    for node_selection, node_direction in zip(nodes_selection, nodes_direction):
-        nodes[f"{direction}_node_{node_selection}"] = False
+    for node_id, node_direction in zip(node_ids, nodes_direction):
+        nodes[f"{direction}_node_{node_id}"] = False
         nodes.loc[
             [int(n) for n in node_direction], 
-            f"{direction}_node_{node_selection}"
+            f"{direction}_node_{node_id}"
         ] = True
-        edges[f"{direction}_node_{node_selection}"] = False
+        edges[f"{direction}_node_{node_id}"] = False
         if direction == "upstream":
             edges.loc[
-                edges.node_end.isin(node_direction+[node_selection]) & edges.node_start.isin(node_direction), 
-                f"{direction}_node_{node_selection}"
+                edges.node_end.isin(node_direction+[node_id]) & edges.node_start.isin(node_direction), 
+                f"{direction}_node_{node_id}"
             ] = True
         else:
             edges.loc[
-                edges.node_start.isin(node_direction+[node_selection]) & edges.node_end.isin(node_direction), 
-                f"{direction}_node_{node_selection}"
+                edges.node_start.isin(node_direction+[node_id]) & edges.node_end.isin(node_direction), 
+                f"{direction}_node_{node_id}"
             ] = True
     return nodes, edges
 
