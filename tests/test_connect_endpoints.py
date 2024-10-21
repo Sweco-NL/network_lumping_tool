@@ -26,7 +26,10 @@ base_dir = Path("p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Wer
 # base_dir = Path("..\.data\\")
 
 hydro_objects_gpkg = Path(base_dir, "0_basisdata.gpkg")
-hydro_objects = gpd.read_file(hydro_objects_gpkg, layer="hydroobjecten").to_crs(28992)
+hydro_objects_layers = ["hydroobjecten","hydroobjecten_extra"]
+hydro_objects = gpd.GeoDataFrame()
+for layer in hydro_objects_layers:
+    hydro_objects = pd.concat([hydro_objects, gpd.read_file(hydro_objects_gpkg, layer=layer)])
 
 hydro_objects.to_file("..\.data\\0_basisdata.gpkg", layer="hydroobjecten")
 logging.info("hydro-objects loaded")
