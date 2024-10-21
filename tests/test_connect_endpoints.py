@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 import logging
 import matplotlib.pyplot as plt
+from dotenv import dotenv_values
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(script_dir))
@@ -21,14 +22,12 @@ from src.network_lumping.graph_utils.create_graph import (
 logging.basicConfig(level=logging.INFO)
 
 logging.info("load hydro-objects")
-base_dir = Path("p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\aa_en_maas\\")
-# base_dir = Path("p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\test\\")
-# base_dir = Path("..\.data\\")
+config = dotenv_values("..\\.env")
+base_dir = Path(config["DATA_DIR"])
 
 hydro_objects_gpkg = Path(base_dir, "0_basisdata.gpkg")
 hydro_objects = gpd.read_file(hydro_objects_gpkg, layer="hydroobjecten").to_crs(28992)
 
-hydro_objects.to_file("..\.data\\0_basisdata.gpkg", layer="hydroobjecten")
 logging.info("hydro-objects loaded")
 
 hydro_objects.rename(columns={'CODE':'code'}, inplace=True)
