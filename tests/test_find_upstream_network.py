@@ -42,7 +42,13 @@ for run in range(3):
     nodes_selection = np.array(random.sample(range(0, len(nodes)), no_nodes))
     nodes_selection_colors = plt.get_cmap("hsv", no_nodes+1)
 
-    nodes, edges = find_nodes_edges_for_direction(nodes, edges, nodes_selection, direction)
+    nodes, edges = find_nodes_edges_for_direction(
+        nodes=nodes, 
+        edges=edges, 
+        node_ids=nodes_selection, 
+        border_node_ids=nodes_selection,
+        direction=direction
+    )
 
     f, ax = plt.subplots(1, 1, figsize=(12, 8))
     hydro_objects.plot(ax=ax, color='lightblue', linewidth=1.0, zorder=0)
