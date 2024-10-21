@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 import logging
 import matplotlib.pyplot as plt
+import fiona
 from dotenv import dotenv_values
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +27,11 @@ config = dotenv_values("..\\.env")
 base_dir = Path(config["DATA_DIR"])
 
 hydro_objects_gpkg = Path(base_dir, "0_basisdata.gpkg")
-hydro_objects = gpd.read_file(hydro_objects_gpkg, layer="hydroobjecten").to_crs(28992)
+hydro_objects_layers = ["hydroobjecten","hydroobjecten_extra"]
+hydro_objects = gpd.GeoDataFrame()
+for layer in hydro_objects_layers:
+    if layer in fiona.listlayers(hydro_objects_gpkg):
+        hydro_objects = pd.concat([hydro_objects, gpd.read_file(hydro_objects_gpkg, layer=layer)])
 
 logging.info("hydro-objects loaded")
 
