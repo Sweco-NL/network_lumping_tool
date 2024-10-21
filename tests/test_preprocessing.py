@@ -21,6 +21,7 @@ n.read_basis_data_from_gpkg(
 positions = {n: [n[0], n[1]] for n in list(n.G.nodes)}
 
 f, ax = plt.subplots(1, 1, figsize=(10, 6))
+n.edges.plot(ax=ax, color='lightblue', zorder=0)
 nx.draw(n.G, positions, ax=ax, node_size=8)
 ax.axis("equal")
 plt.tight_layout()
