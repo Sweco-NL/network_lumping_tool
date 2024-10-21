@@ -20,13 +20,18 @@ from src.network_lumping.graph_utils.create_graph import (
 
 logging.basicConfig(level=logging.INFO)
 
-# basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\aa_en_maas\\0_basisdata.gpkg'
-# hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten").to_crs(28992)
-basis_gpkg = 'p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\test\\0_basisdata.gpkg'
-hydro_objects = gpd.read_file(basis_gpkg, layer="hydroobjecten2").to_crs(28992)
+logging.info("load hydro-objects")
+base_dir = Path("p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\aa_en_maas\\")
+# base_dir = Path("p:\\5325\\51024343_AaEnMaas_Afwateringseenheden_Lumpen\\300 Werkdocumenten\\3_analyse\\test\\")
+# base_dir = Path("..\.data\\")
+
+hydro_objects_gpkg = Path(base_dir, "0_basisdata.gpkg")
+hydro_objects = gpd.read_file(hydro_objects_gpkg, layer="hydroobjecten").to_crs(28992)
+
+hydro_objects.to_file("..\.data\\0_basisdata.gpkg", layer="hydroobjecten")
+logging.info("hydro-objects loaded")
 
 hydro_objects.rename(columns={'CODE':'code'}, inplace=True)
-print(basis_gpkg)
 
 # LineString Z to 2D
 hydro_objects = remove_z_dims(hydro_objects)
@@ -45,8 +50,8 @@ ax.axis("equal")
 plt.tight_layout()
 plt.show()
 
-export_gpkg = basis_gpkg.replace("0_basisdata", "1_data_bewerkt")
+export_gpkg = Path(str(hydro_objects_gpkg).replace("0_basisdata", "1_data_bewerkt"))
 hydro_objects.to_file(export_gpkg, layer="hydroobjecten")
 
-print(hydro_objects)
+logging.info(hydro_objects)
 

@@ -3,6 +3,8 @@ import geopandas as gpd
 import networkx as nx
 import momepy
 from shapely.geometry import Point
+import logging
+import logging
 
 
 def create_graph_from_edges(edges: gpd.GeoDataFrame):
@@ -83,7 +85,7 @@ def create_graph_based_on_nodes_edges(
             else:
                 graph.add_edge(edge.from_node, edge.to_node)
     if print_logmessage:
-        print(
+        logging.info(
             f" - create network graph from nodes ({len(nodes)}x) and edges ({len(edges)}x)"
         )
     return graph
@@ -107,5 +109,5 @@ def add_basin_code_from_network_to_nodes_and_edges(
             "basin",
         ] = i + 1
         nodes.loc[nodes["node_no"].isin(list(subgraph)), "basin"] = i + 1
-    print(f" - define numbers Ribasim-Basins ({len(subgraphs)}x) and join edges/nodes")
+    loggin.info(f" - define numbers Ribasim-Basins ({len(subgraphs)}x) and join edges/nodes")
     return nodes, edges

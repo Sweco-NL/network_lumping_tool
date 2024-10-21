@@ -3,6 +3,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import momepy
 import networkx as nx
+import logging
 
 from src.network_lumping import NetworkLumping
 
@@ -27,4 +28,4 @@ ax.axis("equal")
 plt.tight_layout()
 plt.show()
 
-print(momepy.nx_to_gdf(n.G))
+logging.info(momepy.nx_to_gdf(n.G))

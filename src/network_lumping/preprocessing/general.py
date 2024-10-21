@@ -193,7 +193,7 @@ def connect_lines_by_endpoints(
     split_lines["new_code"] = split_lines["code"]
 
     for ind, split_action in split_endpoints.iterrows():
-        print(split_action["lines_to_add_point"])
+        logging.info(split_action["lines_to_add_point"])
         line = lines[lines["code"].isin(split_action["lines_to_add_point"])].iloc[0]
         linestring = line['geometry']
         nodes_to_add = []

@@ -163,4 +163,4 @@ cython_debug/
 
 .temp/
 .ruff_cache
-
+.data
