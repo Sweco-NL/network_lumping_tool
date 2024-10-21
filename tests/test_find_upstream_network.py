@@ -34,10 +34,11 @@ nodes, edges, graph = create_graph_from_edges(hydro_objects)
 positions = {n: [n[0], n[1]] for n in list(graph.nodes)}
 
 # no nodes for which to find upstream/downstream nodes and edges
-no_nodes = 5
+no_runs = 3
+no_nodes = 2
 direction = "upstream" # upstream/downstream
 
-for run in range(3):
+for run in range(no_runs):
     # select random nodes
     nodes_selection = np.array(random.sample(range(0, len(nodes)), no_nodes))
     nodes_selection_colors = plt.get_cmap("hsv", no_nodes+1)

@@ -84,6 +84,7 @@ def find_node_ids_in_directed_graph(from_node_ids, to_node_ids, node_ids, search
 
 
 def find_nodes_edges_for_direction(nodes, edges, nodes_selection, direction="upstream"):
+    """find_nodes_edges_for_direction"""
     nodes_direction = find_node_ids_in_directed_graph(
         from_node_ids=edges.node_start.to_numpy(), 
         to_node_ids=edges.node_end.to_numpy(), 
