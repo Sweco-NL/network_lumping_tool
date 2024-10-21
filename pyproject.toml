@@ -33,6 +33,7 @@ dependencies = [
     "xugrid==0.7.1",
     "tomli==2.0.1",
     "tomli_w==1.0.0",
+    "python-dotenv==1.0.1",
 ]
 keywords = ["hydrology", "network_lumping"]
 classifiers = [
