@@ -109,5 +109,7 @@ def add_basin_code_from_network_to_nodes_and_edges(
             "basin",
         ] = i + 1
         nodes.loc[nodes["node_no"].isin(list(subgraph)), "basin"] = i + 1
-    loggin.info(f" - define numbers Ribasim-Basins ({len(subgraphs)}x) and join edges/nodes")
+    loggin.info(
+        f" - define numbers Ribasim-Basins ({len(subgraphs)}x) and join edges/nodes"
+    )
     return nodes, edges
