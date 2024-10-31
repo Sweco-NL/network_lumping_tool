@@ -3345,7 +3345,7 @@ packages:
   name: network-lumping
   version: 0.1.0
   path: .
-  sha256: 3803d7ca2c0ed0e07acf3da84f12a457ce961c0904af7dc9e25af245c5bcfa60
+  sha256: 048000187e8d6c13bf3b6051666b6e9c8c480335894042715742e4d5941cda04
   requires_dist:
   - ugrid>=0.13.0,<0.14
   - tomli-w>=1.1.0,<2

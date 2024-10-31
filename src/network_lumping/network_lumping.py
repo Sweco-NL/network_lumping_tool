@@ -1,16 +1,17 @@
 from pathlib import Path
+import logging
 
+import pandas as pd
 import geopandas as gpd
 import networkx as nx
-import momepy
 from pydantic import BaseModel, ConfigDict
+import folium
+import matplotlib
+import matplotlib.pyplot as plt
+import webbrowser
 
-from .graph_utils.create_graph import (
-    generate_nodes_from_edges,
-    create_graph_based_on_nodes_edges,
-    create_graph_from_edges,
-)
-from .preprocessing.general import remove_z_dims
+from .graph_utils.create_graph import create_graph_from_edges
+from .graph_utils.network_functions import find_nodes_edges_for_direction
 
 
 class NetworkLumping(BaseModel):
@@ -18,28 +19,313 @@ class NetworkLumping(BaseModel):
         arbitrary_types_allowed=True,
     )
 
-    name: str = ""
-    areas: gpd.GeoDataFrame = None
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    path: Path = None
+    name: str = None
+
+    read_results: bool = False
+    write_results: bool = False
+
+    direction: str = "upstream"
+
+    hydroobjecten: gpd.GeoDataFrame = None
+    buitenwateren: gpd.GeoDataFrame = None
+    overige_watergangen: gpd.GeoDataFrame = None
+    afwateringseenheden: gpd.GeoDataFrame = None
+
+    uitstroom_punten: gpd.GeoDataFrame = None
+    uitstroom_edges: gpd.GeoDataFrame = None
+    uitstroom_nodes: gpd.GeoDataFrame = None
+    uitstroom_areas_0: gpd.GeoDataFrame = None
+    uitstroom_areas_1: gpd.GeoDataFrame = None
+    uitstroom_areas_2: gpd.GeoDataFrame = None
+
     edges: gpd.GeoDataFrame = None
     nodes: gpd.GeoDataFrame = None
-    G: nx.DiGraph = None
+    network_positions: dict = None
+    graph: nx.DiGraph = None
 
-    def read_basis_data_from_gpkg(
-        self,
-        basis_gpkg: Path,
-        edges_layer: str = "network_edges",
-        edges_id_column: str = "CODE",
-        areas_layer: str = "areas",
-        areas_id_column: str = "CODE",
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.path is not None:
+            self.check_case_path_directory(path=self.path)
+            self.read_data_from_case()
+
+    def check_case_path_directory(self, path: Path):
+        """Checks if case directory exists and if required directory structure exists
+
+        Parameters
+        ----------
+        path : Path
+            path to case directory. name of directory is used as case name.
+            self.path and self.name are set
+
+        Raises ValueErrors in case directory and 0_basisdata directory not exist
+        """
+        if not path.exists() and path.is_dir():
+            raise ValueError(
+                f"provided path [{path}] does not exist or is not a directory"
+            )
+        self.path = path
+        self.name = self.path.name
+        logging.info(f' ### Case "{self.name.capitalize()}" ###')
+
+        # check if directories 0_basisdata and 1_tussenresultaat exist
+        if not Path(self.path, "0_basisdata").exists():
+            raise ValueError(f"provided path [{path}] exists but without a 0_basisdata")
+        for folder in ["1_tussenresultaat", "2_resultaat"]:
+            if not Path(self.path, folder).exists():
+                Path(self.path, folder).mkdir(parents=True, exist_ok=True)
+
+    def read_data_from_case(self, path: Path = None, read_results: bool = None):
+        """Read data from case: including basis data and intermediate results
+
+        Parameters
+        ----------
+        path : Path, optional
+            Path to the case directory including directories 0_basisdata and
+            1_tussenresultaat. Directory name is used as name for the case,
+            by default None
+        read_results : bool, optional
+            if True, it reads already all resulst from, by default None
+        """
+        if path is not None and path.exists():
+            self.check_case_path_directory(path=path)
+        logging.info(f"   x read basisdata")
+        basisdata_gpkgs = [
+            Path(self.path, "0_basisdata", f + ".gpkg")
+            for f in [
+                "hydroobjecten",
+                "overige_watergangen",
+                "krw_lijn",
+                "krw_vlak",
+                "krw_deelgebieden",
+                "uitstroom_punten",
+                "afwateringseenheden",
+            ]
+        ]
+        if isinstance(read_results, bool):
+            self.read_results = read_results
+        baseresults_gpkgs = (
+            [
+                Path(self.path, "1_tussenresultaat", f + ".gpkg")
+                for f in [
+                    "uitstroom_edges",
+                    "uitstroom_nodes",
+                    "uitstroom_areas_0",
+                    "uitstroom_areas_1",
+                    "uitstroom_areas_2",
+                ]
+            ]
+            if self.read_results
+            else []
+        )
+        for list_gpkgs in [basisdata_gpkgs, baseresults_gpkgs]:
+            for x in list_gpkgs:
+                if x.is_file():
+                    if hasattr(self, x.stem):
+                        logging.debug(f"    - get dataset {x.stem}")
+                        setattr(self, x.stem, gpd.read_file(x, layer=x.stem))
+
+    def create_graph_from_network(
+        self, water_lines=["buitenwateren", "hydroobjecten", "overige_watergangen"]
     ):
-        if basis_gpkg.suffix != ".gpkg":
-            raise ValueError(f"Provide path to gpkg-file, not {basis_gpkg}")
-        if not basis_gpkg.exists():
-            raise ValueError(f"Provided path {basis_gpkg} not existing")
-        edges = gpd.read_file(basis_gpkg, layer=edges_layer)
-        edges = remove_z_dims(edges)
-        edges["edgeID"] = edges[edges_id_column]
-        self.nodes, self.edges, self.G = create_graph_from_edges(edges)
-        areas = gpd.read_file(basis_gpkg, layer=areas_layer)
-        areas["areaID"] = areas[areas_id_column]
-        self.areas = areas
+        """_summary_
+
+        _extended_summary_
+
+        Parameters
+        ----------
+        water_lines : list, optional
+            _description_, by default ["buitenwateren", "hydroobjecten", "overige_watergangen"]
+        """
+        logging.info("  x create network graph")
+        self.uitstroom_edges = None
+        for water_line in water_lines:
+            gdf_water_line = getattr(self, water_line)
+            if self.uitstroom_edges is None:
+                self.uitstroom_edges = gdf_water_line
+            else:
+                self.uitstroom_edges = pd.concat([self.uitstroom_edges, gdf_water_line])
+        self.nodes, self.edges, self.graph = create_graph_from_edges(
+            self.uitstroom_edges
+        )
+        self.network_positions = {n: [n[0], n[1]] for n in list(self.graph.nodes)}
+
+    def find_upstream_downstream_nodes_edges(
+        self, direction: str = "upstream", no_uitstroom_punten: int = None
+    ):
+        """_summary_
+
+        _extended_summary_
+
+        Parameters
+        ----------
+        direction : str, optional
+            _description_, by default "upstream"
+        """
+        if direction not in ["upstream", "downstream"]:
+            raise ValueError(f" x direction needs to be 'upstream' or 'downstream'")
+        self.direction = direction
+        logging.info(
+            f"  x find {direction} nodes and edges for {len(self.uitstroom_punten)} outflow locations"
+        )
+
+        if no_uitstroom_punten is not None:
+            self.uitstroom_punten = self.nodes.sample(n=no_uitstroom_punten)
+
+        self.uitstroom_punten["representatieve_node"] = (
+            self.uitstroom_punten.geometry.apply(
+                lambda x: self.nodes.geometry.distance(x).idxmin()
+            )
+        )
+
+        self.uitstroom_nodes, self.uitstroom_edges = find_nodes_edges_for_direction(
+            nodes=self.nodes,
+            edges=self.edges,
+            node_ids=self.uitstroom_punten["representatieve_node"].to_numpy(),
+            border_node_ids=self.uitstroom_punten["representatieve_node"].to_numpy(),
+            direction=direction,
+        )
+
+
+    def export_results_all(
+        self,
+        html_file_name: str = None,
+        width_edges: float = 10.0,
+        opacity_edges: float = 0.5,
+    ):
+        """Export results to geopackages and folium html"""
+        self.export_results_to_gpkg()
+        self.export_results_to_html_file(
+            html_file_name=html_file_name,
+            width_edges=width_edges,
+            opacity_edges=opacity_edges
+        )
+
+
+    def export_results_to_gpkg(self):
+        """Export results to geopackages in folder 1_tussenresultaat"""
+        results_dir = Path(self.path, "1_tussenresultaat")
+        logging.info(f"  x export results")
+        for layer in [
+            "uitstroom_punten",
+            "uitstroom_edges",
+            "uitstroom_nodes",
+            "uitstroom_areas_0",
+            "uitstroom_areas_1",
+            "uitstroom_areas_2",
+        ]:
+            result = getattr(self, layer)
+            if result is not None:
+                logging.debug(f"   - {layer}")
+                result.to_file(Path(results_dir, f"{layer}.gpkg"))
+
+
+    def export_results_to_html_file(
+        self,
+        html_file_name: str = None,
+        width_edges: float = 10.0,
+        opacity_edges: float = 0.5,
+    ):
+        """Export results to folium html file
+
+        Parameters
+        ----------
+        html_file_name : str, optional
+            filename folium html, by default None
+        width_edges : float, optional
+            width (meters) of edges in folium html, by default 10.0
+        opacity_edges : float, optional
+            opacity of edges in folium html, by default 0.5
+        """
+        nodes_selection = self.uitstroom_punten.representatieve_node.to_numpy()
+        no_nodes = len(self.uitstroom_punten)
+        nodes_colors = plt.get_cmap("hsv", no_nodes + 1)
+        nodes_4326 = self.uitstroom_nodes.to_crs(4326)
+
+        m = folium.Map(
+            location=[nodes_4326.geometry.y.mean(), nodes_4326.geometry.x.mean()],
+            tiles=None,
+            zoom_start=12,
+        )
+        
+        fg = folium.FeatureGroup(
+            name=f"Watergangen", 
+            control=True
+        ).add_to(m)
+        
+        folium.GeoJson(
+            self.uitstroom_edges,
+            color="grey",
+            weight=5,
+            z_index=0,
+            opacity=0.25,
+        ).add_to(fg)
+
+        folium.GeoJson(
+            self.uitstroom_nodes,
+            marker=folium.Circle(
+                radius=4,
+                fill_color="darkgrey",
+                fill_opacity=0.5,
+                color="darkgrey",
+                weight=1,
+                z_index=1,
+            ),
+        ).add_to(fg)
+        
+        folium.GeoJson(
+            self.afwateringseenheden,
+            fill_opacity=0.0,
+            color="grey",
+            weight=0.5,
+            z_index=10,
+            name="Afwateringseenheden"
+        ).add_to(m)
+
+        for i, node_selection in enumerate(nodes_selection):
+            c = matplotlib.colors.rgb2hex(nodes_colors(i))
+            fg = folium.FeatureGroup(
+                name=f"Uitstroompunt node {node_selection}", 
+                control=True
+            ).add_to(m)
+
+            sel_uitstroom_edges = self.uitstroom_edges[
+                self.uitstroom_edges[f"{self.direction}_node_{node_selection}"]
+            ].copy()
+
+            sel_uitstroom_edges.geometry = sel_uitstroom_edges.buffer(width_edges / 2.0)
+            if len(sel_uitstroom_edges) > 0:
+                folium.GeoJson(
+                    sel_uitstroom_edges,
+                    color=c,
+                    weight=5,
+                    z_index=2,
+                    opacity=opacity_edges,
+                    fill_opacity=opacity_edges
+                ).add_to(fg)
+
+            folium.GeoJson(
+                self.uitstroom_nodes.iloc[[node_selection]],
+                marker=folium.Circle(
+                    radius=width_edges * 5.0,
+                    fill_color=c,
+                    fill_opacity=1.0,
+                    color=c,
+                    opacity=1.0,
+                    weight=4,
+                    z_index=0,
+                ),
+            ).add_to(fg)
+
+        folium.TileLayer('openstreetmap', name="Open Street Map", show=False).add_to(m)
+        folium.TileLayer('cartodbpositron', name="Light Background", show=True).add_to(m)
+        
+        folium.LayerControl(collapsed=False).add_to(m)
+
+        if html_file_name is None:
+            html_file_name = self.name
+        m.save(Path(self.path, f"{html_file_name}.html"))
+        webbrowser.open(Path(self.path, f"{html_file_name}.html"))
