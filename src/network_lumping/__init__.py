@@ -21,6 +21,12 @@ def run_network_lumping_to_generate_basins(
         no_uitstroom_punten=no_uitstroom_punten,
     )
 
+    network.assign_drainage_units_to_outflow_points_based_on_id()
+
+    network.assign_drainage_units_to_outflow_points_based_on_length_hydroobject()
+
+    network.dissolve_assigned_drainage_units()
+
     network.export_results_to_gpkg()
 
     network.export_results_to_html_file(
