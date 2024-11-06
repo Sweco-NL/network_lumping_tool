@@ -12,6 +12,7 @@ import webbrowser
 
 from .graph_utils.create_graph import create_graph_from_edges
 from .graph_utils.network_functions import find_nodes_edges_for_direction
+from .utils.general_functions import remove_holes_from_polygons
 
 
 class NetworkLumping(BaseModel):
@@ -33,6 +34,9 @@ class NetworkLumping(BaseModel):
     buitenwateren: gpd.GeoDataFrame = None
     overige_watergangen: gpd.GeoDataFrame = None
     afwateringseenheden: gpd.GeoDataFrame = None
+
+    afwateringseenheden0: gpd.GeoDataFrame = None
+    afwateringseenheden1: gpd.GeoDataFrame = None
 
     uitstroom_punten: gpd.GeoDataFrame = None
     uitstroom_edges: gpd.GeoDataFrame = None
@@ -188,6 +192,80 @@ class NetworkLumping(BaseModel):
             border_node_ids=self.uitstroom_punten["representatieve_node"].to_numpy(),
             direction=direction,
         )
+    
+    def assign_drainage_units_to_outflow_points_based_on_id(self):
+    
+        self.afwateringseenheden['gridcode'] = self.afwateringseenheden['gridcode'].round(0).astype('Int64').astype(str)
+        self.uitstroom_edges['code'] = self.uitstroom_edges['code'].astype(str)
+
+        upstream_columns = [f'{self.direction}_node_{node}' for node in self.uitstroom_punten['representatieve_node'].tolist()]
+        self.afwateringseenheden0 = self.afwateringseenheden.merge(
+        self.uitstroom_edges[["code"] + [f'{column}' for column in upstream_columns]], 
+        how="left", 
+        left_on="gridcode", 
+        right_on="code"
+        )
+
+        self.afwateringseenheden0 =  self.afwateringseenheden0.drop(columns=["code"]) 
+
+        self.afwateringseenheden0[upstream_columns] = self.afwateringseenheden0[upstream_columns].fillna(False)
+
+    def assign_drainage_units_to_outflow_points_based_on_length_hydroobject(self):
+
+        self.afwateringseenheden["unique_id"] = self.afwateringseenheden.index
+        self.afwateringseenheden["savedgeom"] = self.afwateringseenheden.geometry
+
+        joined = gpd.sjoin(self.uitstroom_edges, self.afwateringseenheden, how="inner", predicate='intersects')
+
+        joined['intersection_length'] = joined.apply(lambda row: row.geometry.intersection(row.savedgeom).length, axis=1)
+
+        merged = self.afwateringseenheden.merge(joined[['unique_id', 'code', 'intersection_length']], on='unique_id', how='inner')
+
+        max_intersections = merged.groupby('unique_id')['intersection_length'].idxmax()
+        # Select the rows from the merged GeoDataFrame that correspond to those indices
+        result = merged.loc[max_intersections]
+        # Optionally reset the index if needed
+        result.reset_index(drop=True, inplace=True)
+        result = result.rename(columns={"code":"code_hydroobject"})
+        result = result.drop(columns=["savedgeom"])  
+
+        upstream_columns = [f'{self.direction}_node_{node}' for node in self.uitstroom_punten['representatieve_node'].tolist()]
+        self.afwateringseenheden1 = result.merge(
+        self.uitstroom_edges[["code"] + [f'{column}' for column in upstream_columns]], 
+        how="left", 
+        left_on="code_hydroobject", 
+        right_on="code"
+        )
+        self.afwateringseenheden1 =  self.afwateringseenheden1.drop(columns=["code"]) 
+
+        self.afwateringseenheden1[upstream_columns] = self.afwateringseenheden1[upstream_columns].fillna(False)
+    
+    def dissolve_assigned_drainage_units(self):
+        self.uitstroom_areas_0 = gpd.GeoDataFrame()
+        for node in self.uitstroom_punten['representatieve_node'].tolist():
+            filtered_areas = self.afwateringseenheden1[self.afwateringseenheden1[f'{self.direction}_node_{node}'] == True]
+            # Step 2: Dissolve the filtered geometries
+            dissolved_areas = filtered_areas[['Oppervlakt','geometry']].dissolve(aggfunc='sum')
+            # Optionally, you can reset the index if needed
+            dissolved_areas = dissolved_areas.reset_index()
+        
+            self.uitstroom_areas_0 = gpd.GeoDataFrame(pd.concat([self.uitstroom_areas_0, dissolved_areas]))
+
+        # buffered = self.uitstroom_areas_0.geometry.buffer(-1)  # Use a small value
+
+        # # Create a new GeoDataFrame with the buffered geometries
+        # buffered_gdf = gpd.GeoDataFrame(geometry=buffered)
+
+        # # Explode the geometries to separate polygons
+        # exploded = buffered_gdf.explode(index_parts=False)
+
+        # # Assuming your CRS is in meters; if not, convert your CRS accordingly
+        # exploded = exploded[exploded.geometry.area >= 100]
+
+        # # Reset the index, if desired
+        # exploded.reset_index(drop=True, inplace=True)
+        self.uitstroom_areas_0 = remove_holes_from_polygons(self.uitstroom_areas_0, min_area=50)
+        self.uitstroom_areas_0 =self.uitstroom_areas_0.geometry.buffer(0.1)
 
 
     def export_results_all(
@@ -216,6 +294,8 @@ class NetworkLumping(BaseModel):
             "uitstroom_areas_0",
             "uitstroom_areas_1",
             "uitstroom_areas_2",
+            "afwateringseenheden0",
+            "afwateringseenheden1"
         ]:
             result = getattr(self, layer)
             if result is not None:
@@ -277,7 +357,7 @@ class NetworkLumping(BaseModel):
         ).add_to(fg)
         
         folium.GeoJson(
-            self.afwateringseenheden,
+            self.afwateringseenheden0,
             fill_opacity=0.0,
             color="grey",
             weight=0.5,
@@ -289,11 +369,17 @@ class NetworkLumping(BaseModel):
             c = matplotlib.colors.rgb2hex(nodes_colors(i))
             fg = folium.FeatureGroup(
                 name=f"Uitstroompunt node {node_selection}", 
-                control=True
+                control=True,
+                show=False
             ).add_to(m)
 
             sel_uitstroom_edges = self.uitstroom_edges[
                 self.uitstroom_edges[f"{self.direction}_node_{node_selection}"]
+            ].copy()
+
+            # Assign sel_drainage_units to the class instance
+            sel_drainage_units = self.afwateringseenheden0[
+                self.afwateringseenheden0[f"{self.direction}_node_{node_selection}"]
             ].copy()
 
             sel_uitstroom_edges.geometry = sel_uitstroom_edges.buffer(width_edges / 2.0)
@@ -306,6 +392,16 @@ class NetworkLumping(BaseModel):
                     opacity=opacity_edges,
                     fill_opacity=opacity_edges
                 ).add_to(fg)
+                
+            folium.GeoJson(
+                sel_drainage_units,
+                color=c,
+                weight=1,
+                z_index=2,
+                opacity=opacity_edges * 0.5,
+                fill_opacity=opacity_edges * 0.5
+            ).add_to(fg)
+            
 
             folium.GeoJson(
                 self.uitstroom_nodes.iloc[[node_selection]],
