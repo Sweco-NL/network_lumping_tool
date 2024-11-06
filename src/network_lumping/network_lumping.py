@@ -251,6 +251,19 @@ class NetworkLumping(BaseModel):
         
             self.uitstroom_areas_0 = gpd.GeoDataFrame(pd.concat([self.uitstroom_areas_0, dissolved_areas]))
 
+        # buffered = self.uitstroom_areas_0.geometry.buffer(-1)  # Use a small value
+
+        # # Create a new GeoDataFrame with the buffered geometries
+        # buffered_gdf = gpd.GeoDataFrame(geometry=buffered)
+
+        # # Explode the geometries to separate polygons
+        # exploded = buffered_gdf.explode(index_parts=False)
+
+        # # Assuming your CRS is in meters; if not, convert your CRS accordingly
+        # exploded = exploded[exploded.geometry.area >= 100]
+
+        # # Reset the index, if desired
+        # exploded.reset_index(drop=True, inplace=True)
         self.uitstroom_areas_0 = remove_holes_from_polygons(self.uitstroom_areas_0, min_area=50)
         self.uitstroom_areas_0 =self.uitstroom_areas_0.geometry.buffer(0.1)
 
