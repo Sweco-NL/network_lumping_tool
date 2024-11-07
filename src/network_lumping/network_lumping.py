@@ -9,6 +9,7 @@ import folium
 import matplotlib
 import matplotlib.pyplot as plt
 import webbrowser
+import folium
 
 from .graph_utils.create_graph import create_graph_from_edges
 from .graph_utils.network_functions import find_nodes_edges_for_direction
@@ -49,6 +50,8 @@ class NetworkLumping(BaseModel):
     nodes: gpd.GeoDataFrame = None
     network_positions: dict = None
     graph: nx.DiGraph = None
+
+    folium_map: folium.Map = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -420,6 +423,8 @@ class NetworkLumping(BaseModel):
         folium.TileLayer('cartodbpositron', name="Light Background", show=True).add_to(m)
         
         folium.LayerControl(collapsed=False).add_to(m)
+
+        self.folium_map = m
 
         if html_file_name is None:
             html_file_name = self.name
