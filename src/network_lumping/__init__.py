@@ -6,6 +6,7 @@ def run_network_lumping_to_generate_basins(
     path: Path,
     direction: str = "upstream",
     no_uitstroom_punten: int = None,
+    write_results: bool = False,
     html_file_name: str = None,
     width_edges: float = 10.0,
     opacity_edges: float = 0.5,
@@ -27,12 +28,13 @@ def run_network_lumping_to_generate_basins(
 
     network.dissolve_assigned_drainage_units()
 
-    network.export_results_to_gpkg()
+    if write_results:
+        network.export_results_to_gpkg()
 
-    network.export_results_to_html_file(
-        html_file_name=html_file_name,
-        width_edges=width_edges,
-        opacity_edges=opacity_edges,
-    )
+        network.export_results_to_html_file(
+            html_file_name=html_file_name,
+            width_edges=width_edges,
+            opacity_edges=opacity_edges,
+        )
 
     return network
