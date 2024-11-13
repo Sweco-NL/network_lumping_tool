@@ -52,6 +52,8 @@ class NetworkLumping(BaseModel):
     uitstroom_areas_2: gpd.GeoDataFrame = None
     uitstroom_splits_0: gpd.GeoDataFrame = None
     uitstroom_splits_1: gpd.GeoDataFrame = None
+    uitstroom_splits_2: gpd.GeoDataFrame = None
+
 
     edges: gpd.GeoDataFrame = None
     nodes: gpd.GeoDataFrame = None
@@ -205,7 +207,9 @@ class NetworkLumping(BaseModel):
         ## TEST DETECT  ##
         uitstroom_nodes = self.uitstroom_punten.representatieve_node.values
         direction = self.direction
-
+        search_direction = (
+            "upstream" if self.direction == "downstream" else "downstream"
+        )
         uitstroom_edges = None
 
         for node in self.uitstroom_nodes.nodeID.values:
@@ -242,6 +246,7 @@ class NetworkLumping(BaseModel):
             self.uitstroom_nodes,
             self.uitstroom_edges,
         )
+        self.uitstroom_splits_0[f'chosen_{search_direction}_edge'] = None
         self.uitstroom_splits_0.to_file(
             Path(self.path, "1_tussenresultaat", "uitstroom_splits_0.gpkg")
         )
@@ -277,27 +282,27 @@ class NetworkLumping(BaseModel):
             "upstream" if self.direction == "downstream" else "downstream"
         )
         # Now check if self.uitstroom_splits_1 exists
-        if hasattr(self, "uitstroom_splits_1"):
-            # Fill f"{search_direction}_edge" in self.uitstroom_splits_1 where it is empty
+        if hasattr(self, "uitstroom_splits_1") and self.uitstroom_splits_1 is not None and not self.uitstroom_splits_1.empty:
             self.uitstroom_splits_2 = self.uitstroom_splits_1.copy()
-            self.uitstroom_splits_2[f"{search_direction}_edge"] = (
+            self.uitstroom_splits_2[f'chosen_{search_direction}_edge'] = (
                 self.uitstroom_splits_2.apply(
                     lambda x: random.choice(x[f"{search_direction}_edges"])
-                    if pd.isnull(x[f"{search_direction}_edge"])
-                    else x[f"{search_direction}_edge"],
+                    if pd.isnull(x[f'chosen_{search_direction}_edge'])
+                    else x[f'chosen_{search_direction}_edge'],
                     axis=1,
                 )
             )
         else:
             self.uitstroom_splits_2 = self.uitstroom_splits_0.copy()
-            self.uitstroom_splits_2[f"{search_direction}_edge"] = (
+            self.uitstroom_splits_2[f'chosen_{search_direction}_edge'] = (
                 self.uitstroom_splits_2.apply(
                     lambda x: random.choice(x[f"{search_direction}_edges"])
-                    if pd.isnull(x[f"{search_direction}_edge"])
-                    else x[f"{search_direction}_edge"],
+                    if pd.isnull(x[f'chosen_{search_direction}_edge'])
+                    else x[f'chosen_{search_direction}_edge'],
                     axis=1,
                 )
             )
+        return self.uitstroom_splits_2
 
     def assign_drainage_units_to_outflow_points_based_on_id(self):
         self.afwateringseenheden["gridcode"] = (
