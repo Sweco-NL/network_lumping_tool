@@ -449,6 +449,7 @@ class NetworkLumping(BaseModel):
         html_file_name: str = None,
         width_edges: float = 10.0,
         opacity_edges: float = 0.5,
+        open_html: bool = False
     ):
         """Export results to folium html file
 
@@ -498,7 +499,7 @@ class NetworkLumping(BaseModel):
             folium.GeoJson(
                 self.uitstroom_splits_0,
                 marker=folium.Circle(
-                    radius=width_edges * 3.0,
+                    radius=width_edges * 5.0,
                     fill_color="black",
                     fill_opacity=1,
                     color="black",
@@ -576,4 +577,6 @@ class NetworkLumping(BaseModel):
         if html_file_name is None:
             html_file_name = self.name
         m.save(Path(self.path, f"{html_file_name}.html"))
-        webbrowser.open(Path(self.path, f"{html_file_name}.html"))
+        if open_html:
+            webbrowser.open(Path(self.path, f"{html_file_name}.html"))
+        
