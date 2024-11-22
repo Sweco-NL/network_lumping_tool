@@ -46,6 +46,6 @@ def define_list_upstream_downstream_edges_ids(
     nodes_sel = nodes[nodes.nodeID.isin(node_ids)].copy()
     for direction, node in zip(["upstream", "downstream"], ["node_end", "node_start"]):
         nodes_sel[f"{direction}_edges"] = nodes_sel.apply(
-            lambda x: list(edges[edges[node] == x.nodeID].code.values), axis=1
+            lambda x: ",".join(list(edges[edges[node] == x.nodeID].code.values)), axis=1
         )
-    return nodes_sel
+    return nodes_sel.reset_index(drop=True)
