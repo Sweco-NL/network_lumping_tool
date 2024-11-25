@@ -40,7 +40,7 @@ for layer in hydro_objects_layers:
 
 logging.info("hydro-objects loaded")
 
-hydro_objects.rename(columns={"CODE": "code"}, inplace=True)
+hydro_objects.rename(columns={"code": "code"}, inplace=True)
 
 # LineString Z to 2D
 hydro_objects = remove_z_dims(hydro_objects)

@@ -147,7 +147,10 @@ class NetworkLumping(BaseModel):
                 if x.is_file():
                     if hasattr(self, x.stem):
                         logging.debug(f"    - get dataset {x.stem}")
-                        setattr(self, x.stem, gpd.read_file(x, layer=x.stem))
+                        gdf = gpd.read_file(x, layer=x.stem)
+                        if "CODE" in gdf.columns:
+                            gdf = gdf.rename(columns={"CODE": "code"})
+                        setattr(self, x.stem, gdf)
 
 
     def create_graph_from_network(
@@ -164,14 +167,19 @@ class NetworkLumping(BaseModel):
         """
         if water_lines is None:
             water_lines = ["hydroobjecten"]
-        logging.info("  x create network graph")
+        logging.info("   x create network graph")
         self.inflow_outflow_edges = None
         for water_line in water_lines:
             gdf_water_line = getattr(self, water_line)
+            if gdf_water_line is None:
+                continue
             if self.inflow_outflow_edges is None:
-                self.inflow_outflow_edges = gdf_water_line
+                self.inflow_outflow_edges = gdf_water_line.explode()
             else:
-                self.inflow_outflow_edges = pd.concat([self.inflow_outflow_edges, gdf_water_line])
+                self.inflow_outflow_edges = pd.concat([
+                    self.inflow_outflow_edges, 
+                    gdf_water_line.explode()
+                ])
         self.nodes, self.edges, self.graph = create_graph_from_edges(
             self.inflow_outflow_edges
         )
@@ -194,7 +202,7 @@ class NetworkLumping(BaseModel):
             raise ValueError(f" x direction needs to be 'upstream' or 'downstream'")
         self.direction = direction
         logging.info(
-            f"  x find {direction} nodes and edges for {len(self.inflow_outflow_points)} outflow locations"
+            f"   x find {direction} nodes and edges for {len(self.inflow_outflow_points)} outflow locations"
         )
 
         if no_inflow_outflow_points is not None:
@@ -246,7 +254,7 @@ class NetworkLumping(BaseModel):
         self.inflow_outflow_splits_1: gpd.GeoDataFrame
             gdf with splitpoints, nodeid, downstream_edges_ids, upstream_edges_ids, etc.
         """
-        logging.info("  x search for split points based on the basins of outflow/inflow points")
+        logging.info("   x search for split points based on the basins of outflow/inflow points")
 
         inflow_outflow_nodes = self.inflow_outflow_points.representative_node.values
         if self.direction == "downstream":
@@ -260,13 +268,22 @@ class NetworkLumping(BaseModel):
 
         inflow_outflow_edges = None
 
-        for node in self.inflow_outflow_nodes.nodeID.values:
+        inflow_outflow_nodes = define_list_upstream_downstream_edges_ids(
+            self.inflow_outflow_nodes.nodeID.unique(),
+            self.inflow_outflow_nodes,
+            self.inflow_outflow_edges,
+        )
+        inflow_outflow_nodes = inflow_outflow_nodes[inflow_outflow_nodes.no_downstream_edges>1]
+
+        for i_node, node in enumerate(inflow_outflow_nodes.nodeID.values):
+            if i_node%50 == 0:
+                logging.debug(f"    - detect points: {i_node}/{len(inflow_outflow_nodes)}")
             upstream_edges = self.inflow_outflow_edges[
                 self.inflow_outflow_edges[node_search] == node
             ].copy()
 
             inflow_outflow_points_columns = [
-                f"{self.direction}_node_{n}" for n in inflow_outflow_nodes
+                f"{self.direction}_node_{n}" for n in self.inflow_outflow_points.representative_node.values
             ]
 
             for col in inflow_outflow_points_columns:
@@ -316,11 +333,11 @@ class NetworkLumping(BaseModel):
             ]).reset_index(drop=True).drop_duplicates(subset="nodeID", keep='first')
         
         if self.inflow_outflow_splits is None:
-            logging.debug(f"   - no. of splits as input: {0}")
+            logging.debug(f"    - no. of splits as input: {0}")
         else:
-            logging.debug(f"   - no. of splits as input: {len(self.inflow_outflow_splits)}")
-        logging.debug(f"   - no. of splits found in network: {len(self.inflow_outflow_splits_0)}")
-        logging.debug(f"   - no. of splits in total: {len(self.inflow_outflow_splits_1)}")
+            logging.debug(f"    - no. of splits as input: {len(self.inflow_outflow_splits)}")
+        logging.debug(f"    - no. of splits found in network: {len(self.inflow_outflow_splits_0)}")
+        logging.debug(f"    - no. of splits in total: {len(self.inflow_outflow_splits_1)}")
         
         return self.inflow_outflow_splits_1
 
@@ -356,10 +373,10 @@ class NetworkLumping(BaseModel):
         elif self.inflow_outflow_splits_0 is not None and not self.inflow_outflow_splits_0.empty:
             self.inflow_outflow_splits_2 = self.inflow_outflow_splits_0.copy()
         else:
-            logging.debug(" x no splits found: no direction for splits selected")
+            logging.debug("  x no splits found: no direction for splits selected")
             return None
 
-        logging.info(" x search for direction in splits")
+        logging.info("  x search for direction in splits")
         for search_direction in ["upstream", "downstream"]:
             no_splits_known = len(self.inflow_outflow_splits_2[
                 ~self.inflow_outflow_splits_2[f'{search_direction}_edge'].isna()
@@ -401,11 +418,13 @@ class NetworkLumping(BaseModel):
 
 
     def assign_drainage_units_to_outflow_points_based_on_length_hydroobject(self):
+        if self.afwateringseenheden is None:
+            return None
         self.afwateringseenheden["unique_id"] = self.afwateringseenheden.index
         self.afwateringseenheden["savedgeom"] = self.afwateringseenheden.geometry
 
         joined = gpd.sjoin(
-            self.inflow_outflow_edges,
+            self.inflow_outflow_edges.rename(columns={"code": "code_hydroobject"}),
             self.afwateringseenheden,
             how="inner",
             predicate="intersects",
@@ -416,18 +435,15 @@ class NetworkLumping(BaseModel):
         )
 
         merged = self.afwateringseenheden.merge(
-            joined[["unique_id", "code", "intersection_length"]],
+            joined[["unique_id", "code_hydroobject", "intersection_length"]],
             on="unique_id",
             how="inner",
         )
 
-        max_intersections = merged.groupby("unique_id")["intersection_length"].idxmax()
         # Select the rows from the merged GeoDataFrame that correspond to those indices
+        max_intersections = merged.groupby("unique_id")["intersection_length"].idxmax()
         result = merged.loc[max_intersections]
-        # Optionally reset the index if needed
-        result.reset_index(drop=True, inplace=True)
-        result = result.rename(columns={"code": "code_hydroobject"})
-        result = result.drop(columns=["savedgeom"])
+        result = result.drop(columns=["savedgeom"]).reset_index(drop=True)
 
         upstream_columns = [
             f"{self.direction}_node_{node}"
@@ -441,16 +457,18 @@ class NetworkLumping(BaseModel):
             left_on="code_hydroobject",
             right_on="code",
         ).reset_index(drop=True)
-        self.afwateringseenheden_1 = self.afwateringseenheden_1.drop(columns=["code"])
         self.afwateringseenheden_1 = self.afwateringseenheden_1.loc[
             :, ~self.afwateringseenheden_1.columns.duplicated()
         ].copy()
 
         for col in upstream_columns:
             self.afwateringseenheden_1[col] = self.afwateringseenheden_1[col].fillna(False)
+        return self.afwateringseenheden_1
 
 
     def dissolve_assigned_drainage_units(self):
+        if self.afwateringseenheden_1 is None:
+            return None
         self.inflow_outflow_areas_0 = None
         for node in list(self.inflow_outflow_points["representative_node"].unique()):
             filtered_areas = self.afwateringseenheden_1[
@@ -473,6 +491,7 @@ class NetworkLumping(BaseModel):
             self.inflow_outflow_areas_0.geometry, min_area=50
         )
         self.inflow_outflow_areas_0.geometry = self.inflow_outflow_areas_0.geometry.buffer(0.1)
+        return self.inflow_outflow_areas_0
 
 
     def export_results_all(
@@ -506,13 +525,14 @@ class NetworkLumping(BaseModel):
         ]:
             result = getattr(self, layer)
             if result is not None:
-                logging.debug(f"   - {layer}")
+                logging.debug(f"    - {layer}")
                 result.to_file(Path(results_dir, f"{layer}.gpkg"))
 
 
     def export_results_to_html_file(
         self,
         html_file_name: str = None,
+        include_areas: bool = True,
         width_edges: float = 10.0,
         opacity_edges: float = 0.5,
         open_html: bool = False
@@ -528,6 +548,8 @@ class NetworkLumping(BaseModel):
         opacity_edges : float, optional
             opacity of edges in folium html, by default 0.5
         """
+        logging.info(f'   x saving html file')
+
         nodes_selection = self.inflow_outflow_points.representative_node.to_numpy()
         no_nodes = len(self.inflow_outflow_points) + 1
         nodes_colors = plt.get_cmap("hsv", no_nodes)
@@ -564,14 +586,15 @@ class NetworkLumping(BaseModel):
             ),
         ).add_to(fg)
 
-        folium.GeoJson(
-            self.afwateringseenheden[['geometry']].explode(ignore_index=True),
-            fill_opacity=0.0,
-            color="grey",
-            weight=0.5,
-            z_index=10,
-            name="Afwateringseenheden",
-        ).add_to(m)
+        if self.afwateringseenheden is not None and include_areas:
+            folium.GeoJson(
+                self.afwateringseenheden[['geometry']].explode(ignore_index=True),
+                fill_opacity=0.0,
+                color="grey",
+                weight=0.5,
+                z_index=10,
+                name="Afwateringseenheden",
+            ).add_to(m)
 
         for inflow_outflow_areas in [
             self.inflow_outflow_areas_2, 
@@ -622,7 +645,7 @@ class NetworkLumping(BaseModel):
             sel_inflow_outflow_edges.geometry = sel_inflow_outflow_edges.buffer(width_edges / 2.0)
             if len(sel_inflow_outflow_edges) > 0:
                 folium.GeoJson(
-                    sel_inflow_outflow_edges,
+                    sel_inflow_outflow_edges[["geometry"]],
                     color=c,
                     weight=5,
                     z_index=2,
@@ -630,7 +653,7 @@ class NetworkLumping(BaseModel):
                     fill_opacity=opacity_edges,
                 ).add_to(fg)
 
-            if inflow_outflow_areas is not None:
+            if inflow_outflow_areas is not None and include_areas:
                 inflow_outflow_areas_node = inflow_outflow_areas[inflow_outflow_areas[f"inflow_outflow_point"]==node_selection].copy()
                 folium.GeoJson(
                     inflow_outflow_areas_node,
@@ -713,7 +736,8 @@ class NetworkLumping(BaseModel):
         
         self.folium_html_path = Path(self.path, f"{html_file_name}.html")
         m.save(self.folium_html_path)
-        logging.info(f' x html file saved: {html_file_name}.html')
+
+        logging.info(f'   x html file saved: {html_file_name}.html')
 
         if open_html:
             webbrowser.open(Path(self.path, f"{html_file_name}.html"))

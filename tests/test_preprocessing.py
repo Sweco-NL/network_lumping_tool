@@ -17,7 +17,7 @@ n = NetworkLumping(name="Aa en Maas")
 n.read_basis_data_from_gpkg(
     basis_gpkg=Path(basis_gpkg),
     edges_layer="hydroobjecten",
-    edges_id_column="CODE",
+    edges_id_column="code",
     areas_layer="afwateringseenheden",
     areas_id_column="Id",
 )
