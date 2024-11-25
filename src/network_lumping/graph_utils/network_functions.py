@@ -120,13 +120,14 @@ def find_node_ids_in_directed_graph(
     len_node_ids = np.shape(node_ids)[0]
     results = []
     logging.debug(
-        f"   - find {direction} nodes/edges for {len(node_ids)}/{len(search_node_ids)} nodes"
+        f"    - find {direction} nodes/edges for {len(node_ids)}/{len(search_node_ids)} nodes:"
     )
     search_direction = "upstream" if direction == "downstream" else "downstream"
     
     if split_points is None:
         for i in range(node_ids.shape[0]):
-            print(f" * {i+1}/{len_node_ids} ({(i+1)/len(node_ids):.2%})", end="\r")
+            if i%10==0:
+                logging.debug(f"    - {i+1}/{len_node_ids} ({(i+1)/len(node_ids):.2%})")
             node_id = node_ids[i]
             if direction == "upstream":
                 pred = find_predecessors_graph(
@@ -137,7 +138,7 @@ def find_node_ids_in_directed_graph(
                     to_node_ids, from_node_ids, node_id, border_node_ids, np.array([])
                 )
             results += [[p for p in pred if p in search_node_ids]]
-        
+
     else:
         split_node_edge_ids = split_points.set_index("nodeID")[
             f"selected_{search_direction}_edge"
@@ -146,7 +147,8 @@ def find_node_ids_in_directed_graph(
 
 
         for i in range(node_ids.shape[0]):
-            print(f" * {i+1}/{len_node_ids} ({(i+1)/len(node_ids):.2%})", end="\r")
+            if i%10==0:
+                logging.debug(f"    - {i+1}/{len_node_ids} ({(i+1)/len(node_ids):.2%})")
             node_id = node_ids[i]
             if direction == "upstream":
                 pred = find_predecessors_graph_with_splits(
@@ -159,7 +161,6 @@ def find_node_ids_in_directed_graph(
                     border_node_ids, split_node_edge_ids, np.array([])
                 )
             results += [[p for p in pred if p in search_node_ids]]
-
     
     return results
 
@@ -223,4 +224,5 @@ def find_nodes_edges_for_direction(
                 & edges.node_end.isin(node_direction),
                 f"{direction}_node_{node_id}",
             ] = True
+    logging.debug("    - found all nodes and edges for inflow/outflow points")
     return nodes, edges
