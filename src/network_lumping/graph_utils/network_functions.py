@@ -26,7 +26,13 @@ def find_predecessors_graph(
 
 
 def find_predecessors_graph_with_splits(
-    from_node_ids, to_node_ids, edge_ids, node_id, border_node_ids=None, split_node_edge_ids=None, preds=np.array([])
+    from_node_ids,
+    to_node_ids,
+    edge_ids,
+    node_id,
+    border_node_ids=None,
+    split_node_edge_ids=None,
+    preds=np.array([]),
 ):
     """
     Find predecessors within graph for specified node_id.
@@ -36,15 +42,73 @@ def find_predecessors_graph_with_splits(
     pred = from_node_ids[np.where(to_node_ids == node_id)]
     edge = edge_ids[np.where(to_node_ids == node_id)]
 
+    node_ids_to_investigate = [] # [50, 51, 4747] dit is voor debuggen
+    if node_id in node_ids_to_investigate:
+        print(f"node_id {node_id}, pred {pred}, edge {edge}")
+
     for i in range(pred.shape[0]):
         p = pred[i]
         e = edge[i]
-        if p not in preds:
+        if p in preds:
+            if (
+                split_node_edge_ids is not None
+                and p in split_node_edge_ids
+                and split_node_edge_ids[p] == e
+            ):
+                preds = find_predecessors_graph_with_splits(
+                    from_node_ids,
+                    to_node_ids,
+                    edge_ids,
+                    p,
+                    border_node_ids,
+                    split_node_edge_ids,
+                    preds,
+                )
+        else:
             preds = np.append(preds, p)
             if border_node_ids is None or p not in border_node_ids:
-                if split_node_edge_ids is None or p not in split_node_edge_ids or split_node_edge_ids[p] == e:
+                if split_node_edge_ids is None:
+                    if node_id in node_ids_to_investigate:
+                        print(node_id, p, e)
+                        print("split_node_edge_ids is None")
                     preds = find_predecessors_graph_with_splits(
-                        from_node_ids, to_node_ids, edge_ids, p, border_node_ids, split_node_edge_ids, preds
+                        from_node_ids,
+                        to_node_ids,
+                        edge_ids,
+                        p,
+                        border_node_ids,
+                        split_node_edge_ids,
+                        preds,
+                    )
+                elif p not in split_node_edge_ids:
+                    if node_id in node_ids_to_investigate:
+                        print(node_id, p, e)
+                        print(
+                            f"p {p} not in split_node_edge_ids {split_node_edge_ids.keys()}"
+                        )
+                    preds = find_predecessors_graph_with_splits(
+                        from_node_ids,
+                        to_node_ids,
+                        edge_ids,
+                        p,
+                        border_node_ids,
+                        split_node_edge_ids,
+                        preds,
+                    )
+                elif split_node_edge_ids[p] == e:
+                    if node_id in node_ids_to_investigate:
+                        print(node_id, p, e)
+                        print(
+                            f"split_node_edge_ids[p] ({split_node_edge_ids[p]}) == e ({e}):"
+                        )
+                    preds = find_predecessors_graph_with_splits(
+                        from_node_ids,
+                        to_node_ids,
+                        edge_ids,
+                        p,
+                        border_node_ids,
+                        split_node_edge_ids,
+                        preds,
                     )
     return preds
 
@@ -123,10 +187,10 @@ def find_node_ids_in_directed_graph(
         f"    - find {direction} nodes/edges for {len(node_ids)}/{len(search_node_ids)} nodes:"
     )
     search_direction = "upstream" if direction == "downstream" else "downstream"
-    
+
     if split_points is None:
         for i in range(node_ids.shape[0]):
-            if i%10==0:
+            if i % 10 == 0:
                 logging.debug(f"    - {i+1}/{len_node_ids} ({(i+1)/len(node_ids):.2%})")
             node_id = node_ids[i]
             if direction == "upstream":
@@ -143,25 +207,36 @@ def find_node_ids_in_directed_graph(
         split_node_edge_ids = split_points.set_index("nodeID")[
             f"selected_{search_direction}_edge"
         ].to_dict()
-        split_node_edge_ids = {k:v for k, v in split_node_edge_ids.items() if v not in [None, '']}
-
+        split_node_edge_ids = {
+            k: v for k, v in split_node_edge_ids.items() if v is not None
+        }
 
         for i in range(node_ids.shape[0]):
-            if i%10==0:
+            if i % 10 == 0:
                 logging.debug(f"    - {i+1}/{len_node_ids} ({(i+1)/len(node_ids):.2%})")
             node_id = node_ids[i]
             if direction == "upstream":
                 pred = find_predecessors_graph_with_splits(
-                    from_node_ids, to_node_ids, edge_ids, node_id, 
-                    border_node_ids, split_node_edge_ids, np.array([])
+                    from_node_ids,
+                    to_node_ids,
+                    edge_ids,
+                    node_id,
+                    border_node_ids,
+                    split_node_edge_ids,
+                    np.array([]),
                 )
             else:
                 pred = find_predecessors_graph_with_splits(
-                    to_node_ids, from_node_ids, edge_ids, node_id, 
-                    border_node_ids, split_node_edge_ids, np.array([])
+                    to_node_ids,
+                    from_node_ids,
+                    edge_ids,
+                    node_id,
+                    border_node_ids,
+                    split_node_edge_ids,
+                    np.array([]),
                 )
             results += [[p for p in pred if p in search_node_ids]]
-    
+
     return results
 
 
@@ -171,7 +246,7 @@ def find_nodes_edges_for_direction(
     node_ids: list,
     border_node_ids: list = None,
     direction: str = "upstream",
-    split_points: gpd.GeoDataFrame = None
+    split_points: gpd.GeoDataFrame = None,
 ):
     """Find nodes edges upstream or downstream (direction)
 
