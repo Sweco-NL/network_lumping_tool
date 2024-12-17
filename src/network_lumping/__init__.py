@@ -39,7 +39,7 @@ def run_network_lumping(
     if write_results:
         network.export_results_to_gpkg()
     if write_html_file:
-        network.export_results_to_html_file(
+        network.generate_folium_map(
             html_file_name=html_file_name,
             include_areas=include_areas,
             width_edges=width_edges,
@@ -62,7 +62,7 @@ def run_network_lumping_with_random_selection_splits(
         else:
             network.assign_drainage_units_to_outflow_points_based_on_length_hydroobject()
         network.dissolve_assigned_drainage_units()
-    network.export_results_to_html_file(
+    network.generate_folium_map(
         html_file_name=f"{network.name}_random_selection_splits",
         include_areas=include_areas,
     )

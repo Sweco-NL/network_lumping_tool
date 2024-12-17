@@ -14,8 +14,10 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
+from .preprocessing.general import remove_z_dims
 from .graph_utils.create_graph import create_graph_from_edges
 from .graph_utils.network_functions import find_nodes_edges_for_direction
+from .utils.folium_utils import add_basemaps_to_folium_map
 from .utils.general_functions import (
     define_list_upstream_downstream_edges_ids,
     remove_holes_from_polygons,
@@ -135,15 +137,34 @@ class NetworkLumping(BaseModel):
             if self.read_results
             else []
         )
-        for list_gpkgs in [basisdata_gpkgs, baseresults_gpkgs]:
-            for x in list_gpkgs:
-                if x.is_file():
-                    if hasattr(self, x.stem):
-                        logging.debug(f"    - get dataset {x.stem}")
-                        gdf = gpd.read_file(x, layer=x.stem)
-                        if "CODE" in gdf.columns:
-                            gdf = gdf.rename(columns={"CODE": "code"})
-                        setattr(self, x.stem, gdf)
+        for x in basisdata_gpkgs:
+            if not x.is_file() or not hasattr(self, x.stem):
+                continue
+
+            logging.debug(f"    - get dataset {x.stem}")
+            gdf = gpd.read_file(x, layer=x.stem).explode(ignore_index=True)
+            gdf = remove_z_dims(gdf)
+            if "CODE" in gdf.columns:
+                gdf = gdf.rename(columns={"CODE": "code"})
+            if "code" not in gdf.columns:
+                logging.warning(f"    * geodataframe ({x.stem}) has no code column")
+                gdf["code"] = gdf.index
+            no_code_null = len(gdf[gdf.code.isnull()])
+            if no_code_null > 0:
+                logging.warning(
+                    f"    * geodataframe ({x.stem}.code) has {no_code_null} null values"
+                )
+                gdf = gdf[~gdf.code.isnull()]
+            setattr(self, x.stem, gdf)
+
+        for x in baseresults_gpkgs:
+            if not x.is_file() or not hasattr(self, x.stem):
+                continue
+            logging.debug(f"    - get dataset {x.stem}")
+            gdf = gpd.read_file(x, layer=x.stem).explode(ignore_index=True)
+            gdf = remove_z_dims(gdf)
+            setattr(self, x.stem, gdf)
+
 
     def create_graph_from_network(
         self, water_lines=["rivieren", "hydroobjecten", "hydroobjecten_extra"]
@@ -159,9 +180,10 @@ class NetworkLumping(BaseModel):
             if self.inflow_outflow_edges is None:
                 self.inflow_outflow_edges = gdf_water_line.explode()
             else:
-                self.inflow_outflow_edges = pd.concat(
-                    [self.inflow_outflow_edges, gdf_water_line.explode()]
-                )
+                self.inflow_outflow_edges = pd.concat([
+                    self.inflow_outflow_edges, 
+                    gdf_water_line.explode()
+                ])
         self.nodes, self.edges, self.graph = create_graph_from_edges(
             self.inflow_outflow_edges
         )
@@ -173,6 +195,13 @@ class NetworkLumping(BaseModel):
         if direction not in ["upstream", "downstream"]:
             raise ValueError(f" x direction needs to be 'upstream' or 'downstream'")
         self.direction = direction
+
+        if self.inflow_outflow_points is None:
+            logging.info(
+                f"   x no outflow locations available"
+            )
+            return None
+
         logging.info(
             f"   x find {direction} nodes and edges for {len(self.inflow_outflow_points)} outflow locations"
         )
@@ -241,6 +270,7 @@ class NetworkLumping(BaseModel):
         )
 
         inflow_outflow_nodes = self.inflow_outflow_points.representative_node.values
+
         if self.direction == "downstream":
             search_direction = "upstream"
             opposite_direction = "downstream"
@@ -350,10 +380,10 @@ class NetworkLumping(BaseModel):
                 "   x splitsingen nog niet gevonden. gebruik functie .detect_split_points()"
             )
         else:
-            base_dir = Path(self.path, self.dir_results)
+            results_dir = Path(self.path, self.dir_results)
             file_detected_points = "inflow_outflow_splits_detected.gpkg"
             logging.info(
-                f"   x split points found: saved as {self.dir_basis_data}/{file_detected_points}"
+                f"   x split points found: saved as {self.dir_results}/{file_detected_points}"
             )
             detected_inflow_outflow_splits = self.inflow_outflow_splits_1.drop(
                 columns=["selected_upstream_edge", "selected_downstream_edge"],
@@ -370,15 +400,18 @@ class NetworkLumping(BaseModel):
                     "geometry",
                 ]
             ]
-            detected_inflow_outflow_splits.to_file(Path(base_dir, file_detected_points))
+            detected_inflow_outflow_splits.to_file(Path(results_dir, file_detected_points))
 
-    def calculate_angles_of_edges_at_splitpoints(self):
-        self.inflow_outflow_splits_0 = self.inflow_outflow_splits.copy()
 
-        self.inflow_outflow_splits_0 = calculate_angles_of_edges_at_nodes(
-            nodes=self.inflow_outflow_splits_0, edges=self.inflow_outflow_edges
+    def calculate_angles_of_edges_at_nodes(self):
+        self.inflow_outflow_nodes, self.inflow_outflow_edges = (
+            calculate_angles_of_edges_at_nodes(
+                nodes=self.inflow_outflow_nodes,
+                edges=self.inflow_outflow_edges
+            )
         )
-        return self.inflow_outflow_splits_0
+        return self.inflow_outflow_nodes
+
 
     def select_directions_for_splits_based_on_angle(self):
         self.inflow_outflow_splits_1 = self.inflow_outflow_splits_0.copy()
@@ -493,6 +526,7 @@ class NetworkLumping(BaseModel):
             self.inflow_outflow_areas[upstream_downstream_columns].fillna(False)
         )
 
+
     def assign_drainage_units_to_outflow_points_based_on_length_hydroobject(self):
         if self.afwateringseenheden is None:
             return None
@@ -543,6 +577,7 @@ class NetworkLumping(BaseModel):
             )
         return self.inflow_outflow_areas
 
+
     def dissolve_assigned_drainage_units(self):
         if self.inflow_outflow_areas is None:
             return None
@@ -572,6 +607,7 @@ class NetworkLumping(BaseModel):
         ).buffer(-0.1)
         return self.inflow_outflow_areas
 
+
     def export_results_all(
         self,
         html_file_name: str = None,
@@ -580,7 +616,7 @@ class NetworkLumping(BaseModel):
     ):
         """Export results to geopackages and folium html"""
         self.export_results_to_gpkg()
-        self.export_results_to_html_file(
+        self.generate_folium_map(
             html_file_name=html_file_name,
             width_edges=width_edges,
             opacity_edges=opacity_edges,
@@ -603,13 +639,15 @@ class NetworkLumping(BaseModel):
                 logging.debug(f"    - {layer} ({len(result)})")
                 result.to_file(Path(results_dir, f"{layer}.gpkg"))
 
-    def export_results_to_html_file(
+
+    def generate_folium_map(
         self,
         html_file_name: str = None,
         include_areas: bool = True,
         width_edges: float = 10.0,
         opacity_edges: float = 0.5,
         open_html: bool = False,
+        base_map: str = "OpenStreetMap",
     ):
         """Export results to folium html file
 
@@ -790,11 +828,7 @@ class NetworkLumping(BaseModel):
                 show=True,
             ).add_to(m)
 
-        folium.TileLayer("openstreetmap", name="Open Street Map", show=False).add_to(m)
-        folium.TileLayer("cartodbpositron", name="Light Background", show=True).add_to(
-            m
-        )
-
+        m = add_basemaps_to_folium_map(m=m, base_map=base_map)
         folium.LayerControl(collapsed=False).add_to(m)
 
         self.folium_map = m
